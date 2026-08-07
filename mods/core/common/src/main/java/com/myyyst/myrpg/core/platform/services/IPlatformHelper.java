@@ -1,4 +1,4 @@
-package com.example.examplemod.platform.services;
+package com.myyyst.myrpg.core.platform.services;
 
 public interface IPlatformHelper {
 

@@ -1,6 +1,6 @@
-package com.example.examplemod.platform;
+package com.myyyst.myrpg.core.platform;
 
-import com.example.examplemod.platform.services.IPlatformHelper;
+import com.myyyst.myrpg.core.platform.services.IPlatformHelper;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLLoader;
 

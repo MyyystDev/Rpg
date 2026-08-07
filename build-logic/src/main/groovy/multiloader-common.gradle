@@ -3,6 +3,25 @@ plugins {
     id 'maven-publish'
 }
 
+// ---- Per-mod identity properties ----
+// Each mod owns mods/<name>/gradle.properties (mod_id, mod_name, description,
+// credits). This loads that file into every module of the mod, layered over
+// the root gradle.properties which holds shared values.
+def modPropsFile = project.parent != null
+        ? new File(project.parent.projectDir, 'gradle.properties')
+        : null
+if (modPropsFile != null && modPropsFile.exists()) {
+    def modProps = new Properties()
+    modPropsFile.withInputStream { modProps.load(it) }
+    modProps.each { k, v ->
+        if (k == 'description') {
+            project.description = v          // real Project field, not an ext prop
+        } else {
+            project.ext.set(k as String, v)
+        }
+    }
+}
+
 base {
     archivesName = "${mod_id}-${project.name}-${minecraft_version}"
 }
@@ -12,6 +31,8 @@ java {
     withSourcesJar()
     withJavadocJar()
 }
+
+// ... rest of the file exactly as you pasted it ...
 
 tasks.withType(Jar).configureEach {
     from(rootProject.file('LICENSE')) {
