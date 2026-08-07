@@ -22,6 +22,13 @@ if (modPropsFile != null && modPropsFile.exists()) {
     }
 }
 
+// Give every mod a unique module identity: same-named subprojects (common/
+// fabric/neoforge) across mods would otherwise collide as group:name:version
+// and Gradle substitutes one for the other (circular-dependency symptom).
+if (project.ext.has('mod_id')) {
+    project.group = "${project.group}.${project.ext.get('mod_id')}"
+}
+
 base {
     archivesName = "${mod_id}-${project.name}-${minecraft_version}"
 }

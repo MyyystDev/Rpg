@@ -25,7 +25,7 @@ rootProject.name = 'rpg'
 includeBuild('build-logic')
 
 // One entry per mod; each mod is a common/fabric/neoforge triple under mods/.
-def rpgMods = ['core']
+def rpgMods = ['core', 'entities']
 
 rpgMods.each { mod ->
     ['common', 'fabric', 'neoforge'].each { loader ->

@@ -2,29 +2,40 @@ plugins {
     id 'multiloader-common'
 }
 
+def loaderAttribute =
+        Attribute.of('io.github.mcgradleconventions.loader', String)
+
+// fabric/neoforge -> sibling common project
+def commonProjectPath = "${project.parent.path}:common"
+
 configurations {
     commonJava {
         canBeResolved = true
+        canBeConsumed = false
     }
+
     commonResources {
         canBeResolved = true
+        canBeConsumed = false
     }
 }
 
-// Resolve the sibling 'common' module of whichever mod applies this plugin:
-// for :mods:core:fabric this is :mods:core:common, for :mods:entities:neoforge
-// it is :mods:entities:common, and so on.
-def commonPath = project.parent.path + ':common'
-
 dependencies {
-    compileOnly(project(commonPath)) {
-        def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)
+    compileOnly(project(commonProjectPath)) {
         attributes {
             attribute(loaderAttribute, 'common')
         }
     }
-    commonJava(project(path: commonPath, configuration: 'commonJava'))
-    commonResources(project(path: commonPath, configuration: 'commonResources'))
+
+    commonJava(project(
+            path: commonProjectPath,
+            configuration: 'commonJava'
+    ))
+
+    commonResources(project(
+            path: commonProjectPath,
+            configuration: 'commonResources'
+    ))
 }
 
 tasks.named('compileJava', JavaCompile) {
@@ -32,12 +43,12 @@ tasks.named('compileJava', JavaCompile) {
     source(configurations.commonJava)
 }
 
-processResources {
+tasks.named('processResources') {
     dependsOn(configurations.commonResources)
     from(configurations.commonResources)
 }
 
-tasks.named('javadoc', Javadoc).configure {
+tasks.named('javadoc', Javadoc) {
     dependsOn(configurations.commonJava)
     source(configurations.commonJava)
 }
@@ -45,6 +56,7 @@ tasks.named('javadoc', Javadoc).configure {
 tasks.named('sourcesJar', Jar) {
     dependsOn(configurations.commonJava)
     from(configurations.commonJava)
+
     dependsOn(configurations.commonResources)
     from(configurations.commonResources)
 }
