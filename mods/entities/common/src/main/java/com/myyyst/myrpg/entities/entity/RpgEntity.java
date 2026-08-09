@@ -3,16 +3,20 @@ package com.myyyst.myrpg.entities.entity;
 import com.myyyst.myrpg.entities.Constants;
 import com.myyyst.myrpg.entities.data.EntitiesData;
 import com.myyyst.myrpg.entities.data.EntityArchetype;
+import com.myyyst.myrpg.core.stat.StatEngine;
 import com.myyyst.myrpg.core.stat.StatHolder;
 import com.myyyst.myrpg.core.stat.StatStore;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.core.Holder;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
@@ -73,8 +77,7 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
             return;
         }
 
-        archetype.displayName().ifPresent(name ->
-                setCustomName(net.minecraft.network.chat.Component.literal(name)));
+        archetype.displayName().ifPresent(name -> setCustomName(Component.literal(name)));
 
         archetype.stats().ifPresent(s -> {
             s.maxHealth().ifPresent(v -> setBase(Attributes.MAX_HEALTH, v));
@@ -82,15 +85,24 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
             s.attackDamage().ifPresent(v -> setBase(Attributes.ATTACK_DAMAGE, v));
 
             stats.clear();
-            s.custom().forEach(stats::set);
+            s.custom().forEach((statId, value) -> stats.set(this, statId, value));
         });
-        stats.applyVanillaAttributes(this);
-        setHealth(getMaxHealth());   // archetype application = fresh entity at full
+        setHealth(getMaxHealth());   // fresh archetype application = full health
     }
 
-    private void setBase(net.minecraft.core.Holder<net.minecraft.world.entity.ai.attributes.Attribute> attribute, double value) {
+    private void setBase(Holder<Attribute> attribute, double value) {
         var instance = getAttribute(attribute);
         if (instance != null) instance.setBaseValue(value);
+    }
+
+    // ------------------------------------------------------------ ticking
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (!level().isClientSide() && !stats.isEmpty()) {
+            StatEngine.tick(stats, this);
+        }
     }
 
     // ------------------------------------------------------------ persistence
@@ -110,8 +122,8 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
             this.entityData.set(DATA_ARCHETYPE, id);
             applyArchetype();
         }
-        stats.load(input, "myrpg_stats");     // saved values override archetype seeds
-        stats.applyVanillaAttributes(this);
-        // Deliberately NO setHealth here — a loaded entity keeps its wounds.
+        stats.load(input, "myrpg_stats");   // saved values override archetype seeds
+        stats.reapplyStages(this);          // effects re-applied, no enter/exit events
+        // NO setHealth — a loaded entity keeps its wounds.
     }
 }

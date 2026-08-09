@@ -2,8 +2,11 @@ package com.myyyst.myrpg.core;
 
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.data.CoreData;
+import com.myyyst.myrpg.core.stat.PlayerStatTicker;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.resource.IdentifiableResourceReloadListener;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.minecraft.resources.Identifier;
@@ -21,6 +24,11 @@ public class MyRpgFabric implements ModInitializer {
 
         ResourceManagerHelper.get(PackType.SERVER_DATA)
                 .registerReloadListener(new ReloadAdapter("stats", CoreData.STATS));
+
+        ServerTickEvents.END_SERVER_TICK.register(PlayerStatTicker::tick);
+
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                PlayerStatTicker.onJoin(handler.getPlayer()));
 
         // ---- Commands ----
         CommandRegistrationCallback.EVENT.register(

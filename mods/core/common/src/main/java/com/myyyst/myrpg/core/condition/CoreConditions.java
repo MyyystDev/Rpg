@@ -19,6 +19,10 @@ public final class CoreConditions {
         register("reference", Reference.CODEC);
         register("random_chance", RandomChance.CODEC);
         register("debug_flag", DebugFlag.CODEC);
+        register("stat", StatCompare.CODEC);
+        register("variable", VariableConditions.Variable.CODEC);
+        register("variable_exists", VariableConditions.VariableExists.CODEC);
+        register("variable_compare", VariableConditions.VariableCompare.CODEC);
     }
 
     private static void register(String path, MapCodec<? extends RpgCondition> codec) {

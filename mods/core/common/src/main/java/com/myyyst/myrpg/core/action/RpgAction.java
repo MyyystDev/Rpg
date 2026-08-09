@@ -5,8 +5,12 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.myyyst.myrpg.core.Constants;
 import com.myyyst.myrpg.core.registry.DispatchRegistry;
+import com.myyyst.myrpg.core.stat.PlayerStats;
 import com.myyyst.myrpg.core.stat.StatHolder;
+import com.myyyst.myrpg.core.stat.StatStore;
 import com.myyyst.myrpg.core.util.TextResolver;
+import com.myyyst.myrpg.core.variable.VarValue;
+import com.myyyst.myrpg.core.variable.Variables;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -47,7 +51,8 @@ public interface RpgAction {
         REGISTRY.register(core("damage"), Damage.CODEC);
         REGISTRY.register(core("apply_effect"), ApplyEffect.CODEC);
         REGISTRY.register(core("modify_stat"), ModifyStat.CODEC);
-        REGISTRY.register(core("set_stat"), SetStat.CODEC);
+        REGISTRY.register(core("set_variable"), SetVariable.CODEC);
+        REGISTRY.register(core("modify_variable"), ModifyVariable.CODEC);
     }
 
     private static Identifier core(String path) {
@@ -150,33 +155,79 @@ public interface RpgAction {
         @Override public MapCodec<? extends RpgAction> codec() { return CODEC; }
     }
 
-    /** Adds to a custom stat on self (if self carries stats). */
-    record ModifyStat(Identifier stat, double add) implements RpgAction {
+    /**
+     * Modifies a stat on self via the standard operations.
+     * { "type": "myrpg_core:modify_stat", "stat": "mypack:mana",
+     *   "operation": "add", "value": -20 }
+     * Operations: set | add | subtract | multiply | divide.
+     */
+    record ModifyStat(Identifier stat, String operation, double value) implements RpgAction {
         static final MapCodec<ModifyStat> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Identifier.CODEC.fieldOf("stat").forGetter(ModifyStat::stat),
-                Codec.DOUBLE.fieldOf("add").forGetter(ModifyStat::add)
+                Codec.STRING.optionalFieldOf("operation", "add").forGetter(ModifyStat::operation),
+                Codec.DOUBLE.fieldOf("value").forGetter(ModifyStat::value)
         ).apply(i, ModifyStat::new));
 
+        // ModifyStat.execute:
         @Override public void execute(ActionContext ctx) {
-            if (ctx.self() instanceof StatHolder holder) {
-                holder.rpgStats().add(stat, add);
-                holder.rpgStats().applyVanillaAttributes(ctx.self());
+            StatStore store = StatHolder.resolve(ctx.self());
+            if (store == null) return;
+            store.modify(ctx.self(), stat, operation, value);
+            if (ctx.self() instanceof ServerPlayer player) {
+                PlayerStats.markDirty(player);
             }
         }
         @Override public MapCodec<? extends RpgAction> codec() { return CODEC; }
     }
 
-    record SetStat(Identifier stat, double value) implements RpgAction {
-        static final MapCodec<SetStat> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
-                Identifier.CODEC.fieldOf("stat").forGetter(SetStat::stat),
-                Codec.DOUBLE.fieldOf("value").forGetter(SetStat::value)
-        ).apply(i, SetStat::new));
+    /**
+     * Sets a variable. Player scope requires a player in context.
+     * { "type": "myrpg_core:set_variable", "scope": "player",
+     *   "name": "chose_dark_path", "value": { "string": "yes" } }
+     */
+    record SetVariable(String scope, String name, VarValue value) implements RpgAction {
+        static final MapCodec<SetVariable> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.STRING.optionalFieldOf("scope", "player").forGetter(SetVariable::scope),
+                Codec.STRING.fieldOf("name").forGetter(SetVariable::name),
+                VarValue.CODEC.fieldOf("value").forGetter(SetVariable::value)
+        ).apply(i, SetVariable::new));
 
         @Override public void execute(ActionContext ctx) {
-            if (ctx.self() instanceof StatHolder holder) {
-                holder.rpgStats().set(stat, value);
-                holder.rpgStats().applyVanillaAttributes(ctx.self());
+            Variables.set(ctx.self().level(), scope, name, ctx.player(), value);
+        }
+        @Override public MapCodec<? extends RpgAction> codec() { return CODEC; }
+    }
+
+    /**
+     * Arithmetic on a numeric variable; unset treats as 0 (or "default").
+     * { "type": "myrpg_core:modify_variable", "scope": "world",
+     *   "name": "sacrifices", "operation": "add", "value": 1 }
+     */
+    record ModifyVariable(String scope, String name, String operation,
+                          double value, double defaultValue) implements RpgAction {
+        static final MapCodec<ModifyVariable> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.STRING.optionalFieldOf("scope", "player").forGetter(ModifyVariable::scope),
+                Codec.STRING.fieldOf("name").forGetter(ModifyVariable::name),
+                Codec.STRING.optionalFieldOf("operation", "add").forGetter(ModifyVariable::operation),
+                Codec.DOUBLE.fieldOf("value").forGetter(ModifyVariable::value),
+                Codec.DOUBLE.optionalFieldOf("default", 0.0).forGetter(ModifyVariable::defaultValue)
+        ).apply(i, ModifyVariable::new));
+
+        @Override public void execute(ActionContext ctx) {
+            var current = Variables.get(ctx.self().level(), scope, name, ctx.player());
+            if (current.isPresent() && !current.get().isNumber()) {
+                Constants.LOG.warn("[myrpg] modify_variable on non-numeric variable '{}'", name);
+                return;
             }
+            double base = current.map(VarValue::asNumber).orElse(defaultValue);
+            double result = switch (operation) {
+                case "subtract" -> base - value;
+                case "multiply" -> base * value;
+                case "divide" -> value == 0 ? base : base / value;
+                case "set" -> value;
+                default -> base + value;   // add
+            };
+            Variables.set(ctx.self().level(), scope, name, ctx.player(), VarValue.of(result));
         }
         @Override public MapCodec<? extends RpgAction> codec() { return CODEC; }
     }
