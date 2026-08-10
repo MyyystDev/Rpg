@@ -6,9 +6,11 @@ import com.myyyst.myrpg.core.action.RpgAction;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.condition.CoreConditions;
 import com.myyyst.myrpg.core.condition.RpgCondition;
+import com.myyyst.myrpg.core.event.RpgEvents;
 import com.myyyst.myrpg.core.platform.Services;
 import com.myyyst.myrpg.core.stat.PlayerStats;
 import com.myyyst.myrpg.core.stat.StageEffect;
+import com.myyyst.myrpg.core.stat.StatEngine;
 import com.myyyst.myrpg.core.stat.StatStore;
 import com.myyyst.myrpg.core.trigger.RpgTrigger;
 import com.myyyst.myrpg.core.variable.VarValue;
@@ -28,6 +30,7 @@ public class MyRpgCommon {
         RpgAction.bootstrap();
         StageEffect.bootstrap();
         RpgTrigger.bootstrap();
+        RpgEvents.subscribe(StatEngine::onEvent);
 
         RpgCommands.contribute(root -> root.then(
                 Commands.literal("debug")

@@ -8,6 +8,8 @@ import com.myyyst.myrpg.core.registry.DispatchRegistry;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.LivingEntity;
 
+import java.rmi.registry.Registry;
+
 /**
  * When rules fire. A trigger doesn't run anything itself — the rule engine
  * asks it questions. Two kinds coexist behind one interface:
@@ -35,6 +37,7 @@ public interface RpgTrigger {
 
     static void bootstrap() {
         REGISTRY.register(core("interval"), Interval.CODEC);
+        REGISTRY.register(core("event"), EventTrigger.CODEC);
     }
 
     private static Identifier core(String path) {
@@ -57,6 +60,20 @@ public interface RpgTrigger {
         @Override
         public boolean shouldFireAt(long gameTime, LivingEntity owner) {
             return (gameTime + offset) % ticks == 0;
+        }
+
+        @Override public MapCodec<? extends RpgTrigger> codec() { return CODEC; }
+    }
+
+    /** Fires when the named game event is posted for this owner. */
+    record EventTrigger(Identifier event) implements RpgTrigger {
+        public static final MapCodec<EventTrigger> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Identifier.CODEC.fieldOf("event").forGetter(EventTrigger::event)
+        ).apply(i, EventTrigger::new));
+
+        @Override
+        public boolean matchesEvent(Identifier eventId) {
+            return event.equals(eventId);
         }
 
         @Override public MapCodec<? extends RpgTrigger> codec() { return CODEC; }
