@@ -2,11 +2,15 @@ package com.myyyst.myrpg.core;
 
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.serialization.JsonOps;
 import com.myyyst.myrpg.core.action.RpgAction;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.condition.CoreConditions;
 import com.myyyst.myrpg.core.condition.RpgCondition;
+import com.myyyst.myrpg.core.data.CoreData;
+import com.myyyst.myrpg.core.data.StatDef;
 import com.myyyst.myrpg.core.event.RpgEvents;
+import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.platform.Services;
 import com.myyyst.myrpg.core.stat.PlayerStats;
 import com.myyyst.myrpg.core.stat.StageEffect;
@@ -22,6 +26,9 @@ import net.minecraft.commands.arguments.IdentifierArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class MyRpgCommon {
     public static void init() {
@@ -139,5 +146,23 @@ public class MyRpgCommon {
                                             return 1;
                                         }))))
         ));
+
+        RpgCommands.contribute(root -> root.then(Commands.literal("editor")
+                .then(Commands.literal("stats")
+                        .executes(ctx -> {
+                            if (!(ctx.getSource().getEntity() instanceof ServerPlayer player)) {
+                                ctx.getSource().sendFailure(Component.literal("Players only"));
+                                return 0;
+                            }
+                            List<RpgPayloads.StatFile> files = new ArrayList<>();
+                            for (var entry : CoreData.STATS.all().entrySet()) {
+                                StatDef.CODEC.encodeStart(JsonOps.INSTANCE, entry.getValue())
+                                        .result()
+                                        .ifPresent(json -> files.add(new RpgPayloads.StatFile(
+                                                entry.getKey().toString(), json.toString())));
+                            }
+                            Services.NETWORK.sendToPlayer(player, new RpgPayloads.OpenStatEditor(files));
+                            return files.size();
+                        }))));
     }
 }

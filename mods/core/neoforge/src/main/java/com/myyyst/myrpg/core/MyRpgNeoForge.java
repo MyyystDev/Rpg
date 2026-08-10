@@ -2,8 +2,11 @@ package com.myyyst.myrpg.core;
 
 import com.myyyst.myrpg.core.client.ClientEvents;
 import com.myyyst.myrpg.core.client.ClientStatCache;
+import com.myyyst.myrpg.core.client.StatEditorClient;
+import com.myyyst.myrpg.core.client.editor.ClientEditorNet;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.data.CoreData;
+import com.myyyst.myrpg.core.editor.EditorNet;
 import com.myyyst.myrpg.core.event.RpgEvents;
 import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.stat.PlayerStatTicker;
@@ -13,12 +16,14 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -31,9 +36,9 @@ public class MyRpgNeoForge {
         eventBus.addListener(MyRpgNeoForge::onRegisterPayloads);
 
         if (net.neoforged.fml.loading.FMLEnvironment.getDist() == Dist.CLIENT) {
+            ClientEditorNet.sender = ClientPacketDistributor::sendToServer;
             eventBus.register(ClientEvents.class);
         }
-        NeoForge.EVENT_BUS.register(GameEvents.class);
 
         NeoForge.EVENT_BUS.register(GameEvents.class);
     }
@@ -48,10 +53,25 @@ public class MyRpgNeoForge {
                 RpgPayloads.SyncStats.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(
                         () -> ClientStatCache.accept(payload)));
+        registrar.playToClient(RpgPayloads.OpenStatEditor.TYPE, RpgPayloads.OpenStatEditor.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> StatEditorClient.open(payload)));
+
+        // ---- Serverbound (client -> server) ----
+
+        registrar.playToServer(RpgPayloads.SaveStat.TYPE, RpgPayloads.SaveStat.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> {
+                    if (context.player() instanceof ServerPlayer sp) EditorNet.handleSave(sp, payload);
+                }));
+        registrar.playToServer(RpgPayloads.DeleteStat.TYPE, RpgPayloads.DeleteStat.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> {
+                    if (context.player() instanceof ServerPlayer sp) EditorNet.handleDelete(sp, payload);
+                }));
     }
 
     /** Game-bus events, forwarded into common code. */
     public static class GameEvents {
+
+
 
         @SubscribeEvent
         public static void onAddReloadListeners(AddServerReloadListenersEvent event) {
