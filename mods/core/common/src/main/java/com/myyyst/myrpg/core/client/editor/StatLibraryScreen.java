@@ -232,6 +232,9 @@ public class StatLibraryScreen extends Screen {
     private void openEntry(int index) {
         StatWorkingSet.Entry entry = workingSet.entries.get(index);
 
+        Minecraft.getInstance().gui.setScreen(
+                new StatEditorScreen(this, workingSet, workingSet.entries.get(index)));
+
         if (minecraft.player != null) {
             minecraft.player.sendOverlayMessage(
                     Component.literal(

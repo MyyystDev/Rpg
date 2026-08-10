@@ -16,6 +16,8 @@ public final class StatWorkingSet {
         public boolean dirty;
         public String parseError;   // null when valid
 
+        public JsonObject pristine;   // snapshot taken when the editor opens
+
         public Entry(String statId, JsonObject json) {
             this.statId = statId;
             this.json = json;
