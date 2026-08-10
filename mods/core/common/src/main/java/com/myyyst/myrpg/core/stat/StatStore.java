@@ -32,6 +32,8 @@ public class StatStore {
     private final Map<Identifier, Double> values = new HashMap<>();
     private final Map<Identifier, String> currentStages = new HashMap<>();   // transient
 
+    private final java.util.Set<Identifier> dirtySync = new java.util.HashSet<>();
+
     // ------------------------------------------------------------ reads
 
     public double get(Identifier stat) {
@@ -60,6 +62,8 @@ public class StatStore {
         StatDef.ValueConfig cfg = def.value();
         if (cfg.clamp()) value = Mth.clamp(value, cfg.min(), cfg.max());
         if (!cfg.decimal()) value = Math.rint(value);
+
+        dirtySync.add(stat);
 
         double old = get(stat);
         values.put(stat, value);
@@ -174,5 +178,12 @@ public class StatStore {
         values.clear();
         currentStages.clear();
         input.read(key, VALUES_CODEC).ifPresent(values::putAll);
+    }
+
+    public java.util.Set<Identifier> drainDirty() {
+        if (dirtySync.isEmpty()) return java.util.Set.of();
+        var out = java.util.Set.copyOf(dirtySync);
+        dirtySync.clear();
+        return out;
     }
 }

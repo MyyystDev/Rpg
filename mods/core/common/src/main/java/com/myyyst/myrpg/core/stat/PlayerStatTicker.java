@@ -1,11 +1,15 @@
 package com.myyyst.myrpg.core.stat;
 
 import com.myyyst.myrpg.core.data.CoreData;
+import com.myyyst.myrpg.core.data.StatDef;
+import com.myyyst.myrpg.core.network.RpgPayloads;
+import com.myyyst.myrpg.core.platform.Services;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /** Drives StatEngine for all online players; called by loader tick hooks. */
 public final class PlayerStatTicker {
@@ -13,9 +17,8 @@ public final class PlayerStatTicker {
     public static void tick(MinecraftServer server) {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             StatStore store = PlayerStats.get(player);
-            if (!store.isEmpty()) {
-                StatEngine.tick(store, player);
-            }
+            StatEngine.tick(store, player);
+            syncDirty(player, store);
         }
     }
 
@@ -32,12 +35,52 @@ public final class PlayerStatTicker {
         }
         store.reapplyStages(player);
         PlayerStats.markDirty(player);
+        syncFull(player, store);
+    }
+
+    private static void syncFull(ServerPlayer player, StatStore store) {
+        List<RpgPayloads.StatEntry> entries = new ArrayList<>();
+        for (var e : CoreData.STATS.all().entrySet()) {
+            StatDef def = e.getValue();
+            def.hud().filter(StatDef.Hud::visible).ifPresent(hud ->
+                    entries.add(entry(e.getKey(), store.get(e.getKey()), def, hud)));
+        }
+        if (!entries.isEmpty()) {
+            Services.NETWORK.sendToPlayer(player, new RpgPayloads.SyncStats(entries));
+        }
     }
 
     /** On join: restore stage effects without replaying enter/exit events. */
     public static void onJoin(ServerPlayer player) {
-        PlayerStats.get(player).reapplyStages(player);
+        StatStore store = PlayerStats.get(player);
+        store.reapplyStages(player);
+        syncFull(player, store);
     }
+
+    private static void syncDirty(ServerPlayer player, StatStore store) {
+        var dirty = store.drainDirty();
+        if (dirty.isEmpty()) return;
+        List<RpgPayloads.StatEntry> entries = new ArrayList<>();
+        for (Identifier statId : dirty) {
+            CoreData.STATS.get(statId).ifPresent(def ->
+                    def.hud().filter(StatDef.Hud::visible).ifPresent(hud ->
+                            entries.add(entry(statId, store.get(statId), def, hud))));
+        }
+        if (!entries.isEmpty()) {
+            Services.NETWORK.sendToPlayer(player, new RpgPayloads.SyncStats(entries));
+        }
+    }
+
+    private static RpgPayloads.StatEntry entry(Identifier statId, double value,
+                                               StatDef def, StatDef.Hud hud) {
+        String name = def.display().flatMap(StatDef.Display::name).orElse(statId.getPath());
+        String color = def.display().flatMap(StatDef.Display::color).orElse("#FFFFFF");
+        return new RpgPayloads.StatEntry(statId, value,
+                def.value().min(), def.value().max(),
+                name, color, hud.type(), hud.visibility(), hud.showValue());
+    }
+
+
 
     private PlayerStatTicker() {}
 }

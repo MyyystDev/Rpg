@@ -3,12 +3,14 @@ package com.myyyst.myrpg.core;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.core.event.RpgEvents;
+import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.stat.PlayerStatTicker;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.resource.IdentifiableResourceReloadListener;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
@@ -52,6 +54,8 @@ public class MyRpgFabric implements ModInitializer {
             PlayerStatTicker.onJoin(newPlayer);   // re-apply stages on the fresh entity
             RpgEvents.post(new RpgEvents.GameEvent(RpgEvents.PLAYER_RESPAWN, newPlayer, null));
         });
+
+        PayloadTypeRegistry.clientboundPlay().register(RpgPayloads.SyncStats.TYPE, RpgPayloads.SyncStats.STREAM_CODEC);
 
         // ---- Commands ----
         CommandRegistrationCallback.EVENT.register(

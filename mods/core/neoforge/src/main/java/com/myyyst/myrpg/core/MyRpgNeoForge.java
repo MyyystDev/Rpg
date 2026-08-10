@@ -1,11 +1,15 @@
 package com.myyyst.myrpg.core;
 
+import com.myyyst.myrpg.core.client.ClientEvents;
+import com.myyyst.myrpg.core.client.ClientStatCache;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.core.event.RpgEvents;
+import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.stat.PlayerStatTicker;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -15,6 +19,8 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 @Mod(Constants.MOD_ID)
 public class MyRpgNeoForge {
@@ -22,7 +28,26 @@ public class MyRpgNeoForge {
         Constants.LOG.info("Hello NeoForge world!");
         MyRpgCommon.init();
 
+        eventBus.addListener(MyRpgNeoForge::onRegisterPayloads);
+
+        if (net.neoforged.fml.loading.FMLEnvironment.getDist() == Dist.CLIENT) {
+            eventBus.register(ClientEvents.class);
+        }
         NeoForge.EVENT_BUS.register(GameEvents.class);
+
+        NeoForge.EVENT_BUS.register(GameEvents.class);
+    }
+
+    private static void onRegisterPayloads(RegisterPayloadHandlersEvent event) {
+        PayloadRegistrar registrar = event.registrar("1");
+
+        // ---- Clientbound (server -> client) ----
+
+        registrar.playToClient(
+                RpgPayloads.SyncStats.TYPE,
+                RpgPayloads.SyncStats.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(
+                        () -> ClientStatCache.accept(payload)));
     }
 
     /** Game-bus events, forwarded into common code. */
