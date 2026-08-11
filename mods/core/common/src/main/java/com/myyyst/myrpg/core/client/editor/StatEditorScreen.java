@@ -15,7 +15,8 @@ import java.util.List;
 /**
  * The object editor. Three framed zones sharing edges: header strip,
  * nav column, content well. All page content renders — and is clipped —
- * inside the well; every page fits without scrolling.
+ * inside the well; every page fits without scrolling (lists scroll
+ * inside their own frames).
  */
 public class StatEditorScreen extends Screen {
 
@@ -43,6 +44,8 @@ public class StatEditorScreen extends Screen {
     private int selectedStage = -1;
     private int draggingThreshold = -1;
     private int stageScroll;
+    private int effectScroll;
+    private int ruleScroll;
 
     private List<StatValidator.Issue> issues = new ArrayList<>();
 
@@ -81,6 +84,8 @@ public class StatEditorScreen extends Screen {
 
     private void setPage(Page newPage) {
         page = newPage;
+        effectScroll = 0;
+        ruleScroll = 0;
         clearWidgets();
         buildPageWidgets();
     }
@@ -104,10 +109,11 @@ public class StatEditorScreen extends Screen {
             case STAGES -> {
                 if (selectedStage >= 0 && selectedStage < stages().size()) {
                     var stage = stage(selectedStage);
-                    addStageFieldAt(stage, "display.name", wellX + 8, wellY + 28, half - 16);
-                    addStageFieldAt(stage, "id", wellX + half + 8, wellY + 28, half - 16);
-                    addStageFieldAt(stage, "min", wellX + 8, wellY + 76, 56);
-                    addStageFieldAt(stage, "max", wellX + 88, wellY + 76, 56);
+                    int fieldW = (wellW - 132) / 2;
+                    addStageFieldAt(stage, "display.name", wellX + 8, wellY + 28, fieldW);
+                    addStageFieldAt(stage, "id", wellX + 16 + fieldW, wellY + 28, fieldW);
+                    addStageFieldAt(stage, "min", wellX + 8, wellY + 68, 56);
+                    addStageFieldAt(stage, "max", wellX + 8, wellY + 108, 56);
                 }
             }
             default -> { }
@@ -315,6 +321,7 @@ public class StatEditorScreen extends Screen {
 
         PanelStyle.inset(g, tlX, tlY, tlW, tlH);
         var arr = stages();
+        // pass 1: segments
         for (int i = 0; i < arr.size(); i++) {
             var stage = stage(i);
             double sMin = JsonEdit.getDouble(stage, "min", 0);
@@ -328,11 +335,15 @@ public class StatEditorScreen extends Screen {
             if (font.width(label) < x2 - x1 - 4) {
                 g.text(font, Component.literal(label), x1 + 3, tlY + 9, PanelStyle.TEXT_DIM);
             }
-            if (i < arr.size() - 1) {
-                boolean hot = draggingThreshold == i
-                        || PanelStyle.hit(mouseX, mouseY, x2 - 3, tlY, 6, tlH);
-                g.fill(x2 - 1, tlY, x2 + 1, tlY + tlH, hot ? PanelStyle.ACCENT : PanelStyle.PANEL_LIGHT);
-            }
+        }
+        // pass 2: threshold handles, on top
+        for (int i = 0; i < arr.size() - 1; i++) {
+            double sMax = JsonEdit.getDouble(stage(i), "max", 0);
+            int x2 = tlX + 2 + (int) ((sMax + 1 - min) / (max - min) * (tlW - 4));
+            x2 = Math.min(x2, tlX + tlW - 2);
+            boolean hot = draggingThreshold == i
+                    || PanelStyle.hit(mouseX, mouseY, x2 - 3, tlY, 6, tlH);
+            g.fill(x2 - 1, tlY, x2 + 1, tlY + tlH, hot ? PanelStyle.ACCENT : PanelStyle.PANEL_LIGHT);
         }
         g.text(font, Component.literal(trimNum(min)), tlX, tlY + tlH + 3, PanelStyle.TEXT_DIM);
         g.text(font, Component.literal(trimNum(max)), tlX + tlW - font.width(trimNum(max)), tlY + tlH + 3, PanelStyle.TEXT_DIM);
@@ -368,43 +379,71 @@ public class StatEditorScreen extends Screen {
     private void renderStageDetail(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         var stage = stage(selectedStage);
         String stageId = JsonEdit.getString(stage, "id", "?").toUpperCase();
-        int half = wellW / 2;
+        int fieldW = (wellW - 132) / 2;
 
         boolean crumbHover = PanelStyle.hit(mouseX, mouseY, wellX + 8, wellY + 2, font.width("< STAGES"), 12);
         g.text(font, Component.literal("< STAGES"), wellX + 8, wellY + 4,
                 crumbHover ? PanelStyle.TEXT : PanelStyle.ACCENT);
         g.text(font, Component.literal(" / " + stageId), wellX + 8 + font.width("< STAGES"), wellY + 4, PanelStyle.TEXT);
-        PanelStyle.button(g, font, "DELETE", wellX + wellW - 68, wellY, 60,
-                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 68, wellY, 60, PanelStyle.CONTROL_H), false);
+        PanelStyle.button(g, font, "DELETE", wellX + wellW - 68, wellY - 2, 60,
+                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 68, wellY - 2, 60, PanelStyle.CONTROL_H), false);
 
+        // row 1: NAME | STAGE ID, ADD EFFECT right-aligned
         g.text(font, Component.literal("NAME"), wellX + 8, wellY + 18, PanelStyle.TEXT_DIM);
-        g.text(font, Component.literal("STAGE ID"), wellX + half + 8, wellY + 18, PanelStyle.TEXT_DIM);
-        g.text(font, Component.literal("FROM"), wellX + 8, wellY + 66, PanelStyle.TEXT_DIM);
-        g.text(font, Component.literal("TO"), wellX + 88, wellY + 66, PanelStyle.TEXT_DIM);
+        g.text(font, Component.literal("STAGE ID"), wellX + 16 + fieldW, wellY + 18, PanelStyle.TEXT_DIM);
+        PanelStyle.button(g, font, "+ ADD EFFECT", wellX + wellW - 100, wellY + 24, 92,
+                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 100, wellY + 24, 92, PanelStyle.CONTROL_H), true);
 
-        int effectsY = wellY + 106;
-        g.text(font, Component.literal("EFFECTS"), wellX + 8, effectsY, PanelStyle.TEXT);
-        PanelStyle.button(g, font, "+ ADD EFFECT", wellX + wellW - 100, effectsY - 4, 92,
-                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 100, effectsY - 4, 92, PanelStyle.CONTROL_H), true);
+        // left column: FROM over TO
+        g.text(font, Component.literal("FROM"), wellX + 8, wellY + 58, PanelStyle.TEXT_DIM);
+        g.text(font, Component.literal("TO"), wellX + 8, wellY + 98, PanelStyle.TEXT_DIM);
+
+        // effect list frame: right of the left column, down to the events row
+        int frameX = wellX + 128;
+        int frameW = wellW - 136;
+        int frameY = wellY + 56;
+        int eventsRowY = wellY + wellH - 26;
+        int frameH = eventsRowY - frameY - 8;
+
+        PanelStyle.inset(g, frameX, frameY, frameW, frameH);
         var effects = stageArray(stage, "effects");
-        for (int i = 0; i < effects.size(); i++) {
+        int rowH = 18;
+        int visibleRows = (frameH - 4) / rowH;
+        int maxScroll = Math.max(0, effects.size() - visibleRows);
+        effectScroll = Math.min(effectScroll, maxScroll);
+
+        for (int r = 0; r < visibleRows; r++) {
+            int i = effectScroll + r;
+            if (i >= effects.size()) break;
             var effect = effects.get(i).getAsJsonObject();
-            int eRowY = effectsY + 16 + i * 16;
+            int ry = frameY + 2 + r * rowH;
+            int rx = frameX + 2;
+            int rw = frameW - 20;
             String type = effect.has("type") ? effect.get("type").getAsString() : "?";
             var schema = EffectSchemas.all().get(type);
-            g.text(font, Component.literal(schema != null ? schema.label() : type), wellX + 12, eRowY, PanelStyle.TEXT);
-            g.text(font, Component.literal("X"), wellX + wellW - 20, eRowY,
-                    PanelStyle.hit(mouseX, mouseY, wellX + wellW - 24, eRowY - 2, 12, 12) ? PanelStyle.ERROR : PanelStyle.TEXT_DIM);
+            boolean editable = schema != null;
+            boolean hovered = PanelStyle.hit(mouseX, mouseY, rx, ry, rw - 18, rowH - 2);
+            g.fill(rx, ry, rx + rw, ry + rowH - 2, hovered && editable ? PanelStyle.ROW_HOVER : PanelStyle.ROW_BG);
+            g.text(font, Component.literal(editable ? schema.label() : type), rx + 4, ry + 4,
+                    editable ? PanelStyle.TEXT : PanelStyle.EDITED);
+            g.text(font, Component.literal("X"), rx + rw - 12, ry + 4,
+                    PanelStyle.hit(mouseX, mouseY, rx + rw - 16, ry + 2, 12, 12) ? PanelStyle.ERROR : PanelStyle.TEXT_DIM);
         }
+        if (effects.isEmpty()) {
+            g.text(font, Component.literal("No effects in this stage."),
+                    frameX + 8, frameY + 6, PanelStyle.TEXT_DIM);
+        }
+        PanelStyle.scrollbar(g, frameX + frameW - 6, frameY + 2, frameH - 4,
+                effects.size(), visibleRows, effectScroll);
 
-        int eventsY = effectsY + 24 + effects.size() * 16;
-        g.text(font, Component.literal("EVENTS"), wellX + 8, eventsY, PanelStyle.TEXT);
+        // events, bottom split
+        int eventBtnW = (wellW - 24) / 2;
         PanelStyle.button(g, font, "ON ENTER (" + stageArray(stage, "on_enter").size() + ")",
-                wellX + 8, eventsY + 10, 130,
-                PanelStyle.hit(mouseX, mouseY, wellX + 8, eventsY + 10, 130, PanelStyle.CONTROL_H), false);
+                wellX + 8, eventsRowY, eventBtnW,
+                PanelStyle.hit(mouseX, mouseY, wellX + 8, eventsRowY, eventBtnW, PanelStyle.CONTROL_H), false);
         PanelStyle.button(g, font, "ON EXIT (" + stageArray(stage, "on_exit").size() + ")",
-                wellX + 146, eventsY + 10, 130,
-                PanelStyle.hit(mouseX, mouseY, wellX + 146, eventsY + 10, 130, PanelStyle.CONTROL_H), false);
+                wellX + 16 + eventBtnW, eventsRowY, eventBtnW,
+                PanelStyle.hit(mouseX, mouseY, wellX + 16 + eventBtnW, eventsRowY, eventBtnW, PanelStyle.CONTROL_H), false);
     }
 
     private void renderRules(GuiGraphicsExtractor g, int mouseX, int mouseY) {
@@ -413,22 +452,39 @@ public class StatEditorScreen extends Screen {
         PanelStyle.button(g, font, "+ NEW RULE", wellX + wellW - 92, wellY, 84,
                 PanelStyle.hit(mouseX, mouseY, wellX + wellW - 92, wellY, 84, PanelStyle.CONTROL_H), true);
 
-        var rules = rulesArray();
-        int ry = wellY + 34;
-        for (int i = 0; i < rules.size() && ry < wellY + wellH - 24; i++) {
-            var rule = rules.get(i).getAsJsonObject();
-            int rowH = 52;
-            boolean hovered = PanelStyle.hit(mouseX, mouseY, wellX + 8, ry, wellW - 16, rowH - 4);
-            g.fill(wellX + 8, ry, wellX + wellW - 8, ry + rowH - 4, hovered ? PanelStyle.ROW_HOVER : PanelStyle.ROW_BG);
+        int frameY = wellY + 30;
+        int frameH = wellH - 34;
+        PanelStyle.inset(g, wellX + 8, frameY, wellW - 16, frameH);
 
-            g.text(font, Component.literal(String.format("%02d", i + 1)), wellX + 14, ry + 6, PanelStyle.TEXT_DIM);
-            g.text(font, Component.literal("TRIGGER  " + summarizeTrigger(rule)), wellX + 36, ry + 6, PanelStyle.TEXT);
-            g.text(font, Component.literal("IF  " + summarizeList(rule, "conditions", "always")), wellX + 36, ry + 18, PanelStyle.TEXT_DIM);
-            g.text(font, Component.literal("DO  " + summarizeList(rule, "actions", "nothing")), wellX + 36, ry + 30, PanelStyle.TEXT_DIM);
-            g.text(font, Component.literal("X"), wellX + wellW - 22, ry + 6,
-                    PanelStyle.hit(mouseX, mouseY, wellX + wellW - 26, ry + 4, 12, 12) ? PanelStyle.ERROR : PanelStyle.TEXT_DIM);
-            ry += rowH;
+        var rules = rulesArray();
+        int rowH = 52;
+        int visibleRows = (frameH - 4) / rowH;
+        int maxScroll = Math.max(0, rules.size() - visibleRows);
+        ruleScroll = Math.min(ruleScroll, maxScroll);
+
+        for (int r = 0; r < visibleRows; r++) {
+            int i = ruleScroll + r;
+            if (i >= rules.size()) break;
+            var rule = rules.get(i).getAsJsonObject();
+            int ry = frameY + 2 + r * rowH;
+            int rx = wellX + 10;
+            int rw = wellW - 28;
+            boolean hovered = PanelStyle.hit(mouseX, mouseY, rx, ry, rw, rowH - 4);
+            g.fill(rx, ry, rx + rw, ry + rowH - 4, hovered ? PanelStyle.ROW_HOVER : PanelStyle.ROW_BG);
+
+            g.text(font, Component.literal(String.format("%02d", i + 1)), rx + 6, ry + 6, PanelStyle.TEXT_DIM);
+            g.text(font, Component.literal("TRIGGER  " + summarizeTrigger(rule)), rx + 28, ry + 6, PanelStyle.TEXT);
+            g.text(font, Component.literal("IF  " + summarizeList(rule, "conditions", "always")), rx + 28, ry + 18, PanelStyle.TEXT_DIM);
+            g.text(font, Component.literal("DO  " + summarizeList(rule, "actions", "nothing")), rx + 28, ry + 30, PanelStyle.TEXT_DIM);
+            g.text(font, Component.literal("X"), rx + rw - 14, ry + 6,
+                    PanelStyle.hit(mouseX, mouseY, rx + rw - 18, ry + 4, 12, 12) ? PanelStyle.ERROR : PanelStyle.TEXT_DIM);
         }
+        if (rules.isEmpty()) {
+            g.text(font, Component.literal("No rules yet."), wellX + 16, frameY + 8, PanelStyle.TEXT_DIM);
+        }
+
+        PanelStyle.scrollbar(g, wellX + wellW - 14, frameY + 2, frameH - 4,
+                rules.size(), visibleRows, ruleScroll);
     }
 
     private String summarizeTrigger(com.google.gson.JsonObject rule) {
@@ -516,10 +572,11 @@ public class StatEditorScreen extends Screen {
             iy += 13;
         }
 
-        g.text(font, Component.literal("JSON PREVIEW"), wellX + 8, iy + 4, PanelStyle.TEXT_DIM);
-        PanelStyle.button(g, font, "COPY", wellX + wellW - 60, iy, 52,
-                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 60, iy, 52, PanelStyle.CONTROL_H), false);
-        int jsonY = iy + 16;
+        int previewLabelY = iy + 4;
+        g.text(font, Component.literal("JSON PREVIEW"), wellX + 8, previewLabelY + 6, PanelStyle.TEXT_DIM);
+        PanelStyle.button(g, font, "COPY", wellX + wellW - 60, previewLabelY - 2, 52,
+                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 60, previewLabelY - 2, 52, PanelStyle.CONTROL_H), false);
+        int jsonY = previewLabelY + 24;
         PanelStyle.inset(g, wellX + 8, jsonY, wellW - 16, wellY + wellH - jsonY - 4);
         String[] lines = PRETTY.toJson(entry.json).split("\n");
         int ly = jsonY + 4;
@@ -654,7 +711,6 @@ public class StatEditorScreen extends Screen {
         if (page == Page.STAGES) {
             var arr = stages();
 
-
             if (selectedStage >= 0 && selectedStage < arr.size()) {
                 // ---- detail view ----
                 if (PanelStyle.hit(mx, my, wellX + 8, wellY + 2, font.width("< STAGES"), 12)) {
@@ -662,35 +718,65 @@ public class StatEditorScreen extends Screen {
                     setPage(Page.STAGES);
                     return true;
                 }
-                if (PanelStyle.hit(mx, my, wellX + wellW - 68, wellY, 60, PanelStyle.CONTROL_H)) {
+                if (PanelStyle.hit(mx, my, wellX + wellW - 68, wellY - 2, 60, PanelStyle.CONTROL_H)) {
                     arr.remove(selectedStage);
                     selectedStage = -1;
                     entry.dirty = true;
                     setPage(Page.STAGES);
                     return true;
                 }
-                int effectsY = wellY + 106;
-                if (PanelStyle.hit(mx, my, wellX + wellW - 100, effectsY - 4, 92, PanelStyle.CONTROL_H)) {
-                    Minecraft.getInstance().gui.setScreen(new EffectPickerScreen(this, stage(selectedStage)));
+
+                // + ADD EFFECT: straight into the picker
+                if (PanelStyle.hit(mx, my, wellX + wellW - 100, wellY + 24, 92, PanelStyle.CONTROL_H)) {
+                    var selectedStageObj = stage(selectedStage);
+                    Minecraft.getInstance().gui.setScreen(new TypedObjectListScreen(this, "EFFECTS",
+                            stageArray(selectedStageObj, "effects"),
+                            TypedObjectListScreen.Kind.EFFECT, this::markDirtyFromChild, true));
                     return true;
                 }
+
+                int frameX = wellX + 128;
+                int frameW = wellW - 136;
+                int frameY = wellY + 56;
+                int eventsRowY = wellY + wellH - 26;
+                int frameH = eventsRowY - frameY - 8;
+
                 var effects = stageArray(stage(selectedStage), "effects");
-                for (int i = 0; i < effects.size(); i++) {
-                    if (PanelStyle.hit(mx, my, wellX + wellW - 24, effectsY + 14 + i * 16, 12, 12)) {
+                int rowH = 18;
+                int visibleRows = (frameH - 4) / rowH;
+                for (int r = 0; r < visibleRows; r++) {
+                    int i = effectScroll + r;
+                    if (i >= effects.size()) break;
+                    int ry = frameY + 2 + r * rowH;
+                    int rx = frameX + 2;
+                    int rw = frameW - 20;
+                    if (PanelStyle.hit(mx, my, rx + rw - 16, ry + 2, 12, 12)) {
                         effects.remove(i);
                         entry.dirty = true;
                         return true;
                     }
+                    if (PanelStyle.hit(mx, my, rx, ry, rw - 18, rowH - 2)) {
+                        var effect = effects.get(i).getAsJsonObject();
+                        String type = effect.has("type") ? effect.get("type").getAsString() : "?";
+                        var schema = EffectSchemas.all().get(type);
+                        if (schema != null) {
+                            Minecraft.getInstance().gui.setScreen(new TypedObjectConfigScreen(
+                                    this, effects, schema.typeId(), schema.label(), schema.fields(),
+                                    effect, this::markDirtyFromChild));
+                        }
+                        return true;
+                    }
                 }
+
                 var selectedStageObj = stage(selectedStage);
-                int eventsY = effectsY + 24 + effects.size() * 16;
-                if (PanelStyle.hit(mx, my, wellX + 8, eventsY + 10, 130, PanelStyle.CONTROL_H)) {
+                int eventBtnW = (wellW - 24) / 2;
+                if (PanelStyle.hit(mx, my, wellX + 8, eventsRowY, eventBtnW, PanelStyle.CONTROL_H)) {
                     Minecraft.getInstance().gui.setScreen(new TypedObjectListScreen(this, "ON ENTER",
                             stageArray(selectedStageObj, "on_enter"),
                             TypedObjectListScreen.Kind.ACTION, this::markDirtyFromChild));
                     return true;
                 }
-                if (PanelStyle.hit(mx, my, wellX + 146, eventsY + 10, 130, PanelStyle.CONTROL_H)) {
+                if (PanelStyle.hit(mx, my, wellX + 16 + eventBtnW, eventsRowY, eventBtnW, PanelStyle.CONTROL_H)) {
                     Minecraft.getInstance().gui.setScreen(new TypedObjectListScreen(this, "ON EXIT",
                             stageArray(selectedStageObj, "on_exit"),
                             TypedObjectListScreen.Kind.ACTION, this::markDirtyFromChild));
@@ -758,20 +844,26 @@ public class StatEditorScreen extends Screen {
                 return true;
             }
 
-            int ruleRowY = wellY + 34;
-            for (int i = 0; i < rules.size() && ruleRowY < wellY + wellH - 24; i++) {
-                int rowH = 52;
-                if (PanelStyle.hit(mx, my, wellX + wellW - 26, ruleRowY + 4, 12, 12)) {
+            int frameY = wellY + 30;
+            int frameH = wellH - 34;
+            int rowH = 52;
+            int visibleRows = (frameH - 4) / rowH;
+            for (int r = 0; r < visibleRows; r++) {
+                int i = ruleScroll + r;
+                if (i >= rules.size()) break;
+                int ry = frameY + 2 + r * rowH;
+                int rx = wellX + 10;
+                int rw = wellW - 28;
+                if (PanelStyle.hit(mx, my, rx + rw - 18, ry + 4, 12, 12)) {
                     rules.remove(i);
                     entry.dirty = true;
                     return true;
                 }
-                if (PanelStyle.hit(mx, my, wellX + 8, ruleRowY, wellW - 16, rowH - 4)) {
+                if (PanelStyle.hit(mx, my, rx, ry, rw, rowH - 4)) {
                     Minecraft.getInstance().gui.setScreen(
                             new RuleEditScreen(this, rules.get(i).getAsJsonObject()));
                     return true;
                 }
-                ruleRowY += rowH;
             }
         }
 
@@ -786,7 +878,7 @@ public class StatEditorScreen extends Screen {
                 }
                 iy += 13;
             }
-            if (PanelStyle.hit(mx, my, wellX + wellW - 60, iy, 52, PanelStyle.CONTROL_H)) {
+            if (PanelStyle.hit(mx, my, wellX + wellW - 60, iy + 2, 52, PanelStyle.CONTROL_H)) {
                 Minecraft.getInstance().keyboardHandler.setClipboard(PRETTY.toJson(entry.json));
                 return true;
             }
@@ -829,10 +921,26 @@ public class StatEditorScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
-        if (page == Page.STAGES && selectedStage < 0) {
+        if (page == Page.STAGES && selectedStage >= 0) {
+            int frameY = wellY + 56;
+            int frameH = (wellY + wellH - 26) - frameY - 8;
+            int visibleRows = (frameH - 4) / 18;
+            var effects = stageArray(stage(selectedStage), "effects");
+            int max = Math.max(0, effects.size() - visibleRows);
+            effectScroll = Math.max(0, Math.min(max, effectScroll - (int) Math.signum(vertical)));
+            return true;
+        }
+        if (page == Page.STAGES) {
             int visibleRows = (wellH - 80) / 18;
             int max = Math.max(0, stages().size() - visibleRows);
             stageScroll = Math.max(0, Math.min(max, stageScroll - (int) Math.signum(vertical)));
+            return true;
+        }
+        if (page == Page.RULES) {
+            int frameH = wellH - 34;
+            int visibleRows = (frameH - 4) / 52;
+            int max = Math.max(0, rulesArray().size() - visibleRows);
+            ruleScroll = Math.max(0, Math.min(max, ruleScroll - (int) Math.signum(vertical)));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);

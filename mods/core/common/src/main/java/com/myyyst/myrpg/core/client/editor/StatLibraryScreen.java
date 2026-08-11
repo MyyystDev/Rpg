@@ -89,6 +89,9 @@ public class StatLibraryScreen extends Screen {
         // list well
         PanelStyle.inset(g, px + PanelStyle.GRID, listY, pw - PanelStyle.GRID * 2, listH);
 
+        // list well
+        PanelStyle.inset(g, px + PanelStyle.GRID, listY, pw - PanelStyle.GRID * 2, listH);
+
         int rows = listH / PanelStyle.ROW_H;
         for (int r = 0; r < rows; r++) {
             int idx = scroll + r;
@@ -96,23 +99,38 @@ public class StatLibraryScreen extends Screen {
             StatWorkingSet.Entry entry = workingSet.entries.get(visible.get(idx));
             int ry = listY + r * PanelStyle.ROW_H + 2;
             int rx = px + PanelStyle.GRID + 2;
-            int rw = pw - PanelStyle.GRID * 2 - 4;
+            int rw = pw - PanelStyle.GRID * 2 - 18;   // was -4; leaves the scrollbar lane
             boolean hovered = menuEntry < 0 && confirmEntry < 0
                     && PanelStyle.hit(mouseX, mouseY, rx, ry, rw, PanelStyle.ROW_H - 4);
             g.fill(rx, ry, rx + rw, ry + PanelStyle.ROW_H - 4, hovered ? PanelStyle.ROW_HOVER : PanelStyle.ROW_BG);
 
-            g.text(font, Component.literal(entry.displayName().toUpperCase()), rx + PanelStyle.GRID, ry + 8, PanelStyle.TEXT);
-            g.text(font, Component.literal(entry.statId), rx + PanelStyle.GRID, ry + 24, PanelStyle.TEXT_DIM);
-            g.text(font, Component.literal(entry.rangeLabel()), rx + rw - 140, ry + 8, PanelStyle.TEXT_DIM);
-
+            // left column: name (with status chip beside it) over id
+            String name = entry.displayName().toUpperCase();
+            g.text(font, Component.literal(name), rx + PanelStyle.GRID, ry + 8, PanelStyle.TEXT);
+            int chipX = rx + PanelStyle.GRID + font.width(name) + 8;
             if (entry.parseError != null) {
-                PanelStyle.chip(g, font, "1 ERROR", rx + rw - 64, ry + 22, PanelStyle.ERROR);
+                PanelStyle.chip(g, font, "ERROR", chipX, ry + 6, PanelStyle.ERROR);
             } else if (entry.dirty) {
-                PanelStyle.chip(g, font, "EDITED", rx + rw - 64, ry + 22, PanelStyle.EDITED);
+                PanelStyle.chip(g, font, "EDITED", chipX, ry + 6, PanelStyle.EDITED);
             } else {
-                PanelStyle.chip(g, font, "VALID", rx + rw - 64, ry + 22, PanelStyle.VALID);
+                PanelStyle.chip(g, font, "VALID", chipX, ry + 6, PanelStyle.VALID);
             }
+            g.text(font, Component.literal(entry.statId), rx + PanelStyle.GRID, ry + 26, PanelStyle.TEXT_DIM);
+
+            g.fill(rx, ry + PanelStyle.ROW_H - 5, rx + rw, ry + PanelStyle.ROW_H - 4, PanelStyle.PANEL_DARK);
+
+            // right column: labeled range, right-aligned
+            String range = entry.rangeLabel();
+            g.text(font, Component.literal("RANGE"), rx + rw - PanelStyle.GRID - font.width("RANGE"),
+                    ry + 8, PanelStyle.TEXT_DIM);
+            g.text(font, Component.literal(range), rx + rw - PanelStyle.GRID - font.width(range),
+                    ry + 26, PanelStyle.TEXT);
         }
+
+
+
+        PanelStyle.scrollbar(g, px + pw - PanelStyle.GRID - 14, listY + 2, listH - 4,
+                visible.size(), rows, scroll);
 
         g.text(font, Component.literal(visible.size() + " RESULTS"),
                 px + PanelStyle.GRID * 2, py + ph - PanelStyle.GRID * 2, PanelStyle.TEXT_DIM);
@@ -192,12 +210,13 @@ public class StatLibraryScreen extends Screen {
 
         // rows
         int rows = listH / PanelStyle.ROW_H;
+
         for (int r = 0; r < rows; r++) {
             int idx = scroll + r;
             if (idx >= visible.size()) break;
             int ry = listY + r * PanelStyle.ROW_H + 2;
             int rx = px + PanelStyle.GRID + 2;
-            int rw = pw - PanelStyle.GRID * 2 - 4;
+            int rw = pw - PanelStyle.GRID * 2 - 18;
             if (PanelStyle.hit(mx, my, rx, ry, rw, PanelStyle.ROW_H - 4)) {
                 if (event.button() == 1) {
                     menuEntry = visible.get(idx);
@@ -252,10 +271,15 @@ public class StatLibraryScreen extends Screen {
         return true;
     }
 
+    private String lastQuery = "";
+
     @Override
     public void tick() {
-        // refilter on search change, cheaply
-        refilter();
+        String query = searchBox == null ? "" : searchBox.getValue();
+        if (!query.equals(lastQuery)) {
+            lastQuery = query;
+            refilter();
+        }
     }
 
     @Override

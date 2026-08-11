@@ -49,12 +49,18 @@ public class TypedObjectListScreen extends Screen {
 
     public TypedObjectListScreen(Screen parent, String title, JsonArray list,
                                  Kind kind, Runnable onDirty) {
+        this(parent, title, list, kind, onDirty, false);
+    }
+
+    public TypedObjectListScreen(Screen parent, String title, JsonArray list,
+                                 Kind kind, Runnable onDirty, boolean startPicking) {
         super(Component.literal(title));
         this.parent = parent;
         this.title = title;
         this.list = list;
         this.kind = kind;
         this.onDirty = onDirty;
+        this.picking = startPicking;
         loadSchemas();
     }
 
@@ -108,9 +114,16 @@ public class TypedObjectListScreen extends Screen {
         }
     }
 
+    private String lastQuery = "";
+
     @Override
     public void tick() {
-        if (picking) refilter();
+        if (!picking) return;
+        String query = searchBox == null ? "" : searchBox.getValue();
+        if (!query.equals(lastQuery)) {
+            lastQuery = query;
+            refilter();
+        }
     }
 
     // ------------------------------------------------------------ render

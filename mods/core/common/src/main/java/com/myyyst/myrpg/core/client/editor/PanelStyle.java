@@ -76,5 +76,16 @@ public final class PanelStyle {
         return mx >= x && mx < x + w && my >= y && my < y + h;
     }
 
+    /** Vertical scrollbar inside a list frame. Draws only when needed. */
+    public static void scrollbar(GuiGraphicsExtractor g, int x, int y, int h,
+                                 int totalItems, int visibleItems, int scroll) {
+        if (totalItems <= visibleItems) return;
+        g.fill(x, y, x + 4, y + h, INSET_BG);
+        int thumbH = Math.max(12, h * visibleItems / totalItems);
+        int maxScroll = totalItems - visibleItems;
+        int thumbY = y + (h - thumbH) * Math.min(scroll, maxScroll) / maxScroll;
+        g.fill(x, thumbY, x + 4, thumbY + thumbH, PANEL_LIGHT);
+    }
+
     private PanelStyle() {}
 }
