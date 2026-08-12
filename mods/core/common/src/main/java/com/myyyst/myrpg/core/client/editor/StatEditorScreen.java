@@ -2,6 +2,7 @@ package com.myyyst.myrpg.core.client.editor;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.myyyst.myrpg.core.client.StatHudOverlay;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
@@ -114,6 +115,12 @@ public class StatEditorScreen extends Screen {
                     addStageFieldAt(stage, "id", wellX + 16 + fieldW, wellY + 28, fieldW);
                     addStageFieldAt(stage, "min", wellX + 8, wellY + 68, 56);
                     addStageFieldAt(stage, "max", wellX + 8, wellY + 108, 56);
+                }
+            }
+            case DISPLAY -> {
+                String vis = JsonEdit.getString(entry.json, "hud.visibility", "always");
+                if (vis.equals("above_value") || vis.equals("below_value")) {
+                    addNumberField("hud.visibility_value", 0, wellY + 62, 64, 320);
                 }
             }
             default -> { }
@@ -522,21 +529,59 @@ public class StatEditorScreen extends Screen {
         String vis = JsonEdit.getString(entry.json, "hud.visibility", "always");
         renderToggle(g, mouseX, mouseY, "VISIBILITY", vis, wellX + 168, wellY + 38);
 
+        // conditional threshold field (widget built in buildPageWidgets)
+        if (vis.equals("above_value") || vis.equals("below_value")) {
+            g.text(font, Component.literal("THRESHOLD"), wellX + 320, wellY + 52, PanelStyle.TEXT_DIM);
+        }
+
+        // ---- live preview, matching the HUD's rendering per type ----
         g.text(font, Component.literal("LIVE PREVIEW"), wellX + 8, wellY + 78, PanelStyle.TEXT_DIM);
         PanelStyle.inset(g, wellX + 8, wellY + 88, wellW - 16, 40);
+
         double min = JsonEdit.getDouble(entry.json, "value.min", 0);
         double max = JsonEdit.getDouble(entry.json, "value.max", 100);
         int color = parseColor(JsonEdit.getString(entry.json, "display.color", "#FFFFFF"));
-        g.text(font, Component.literal(entry.displayName()), wellX + 16, wellY + 94, PanelStyle.TEXT);
-        int barX = wellX + 16, barY = wellY + 108, barW = wellW - 120;
-        g.fill(barX, barY, barX + barW, barY + 8, 0xFF101012);
         double frac = Math.max(0, Math.min(1, (previewValue - min) / Math.max(1e-9, max - min)));
-        g.fill(barX, barY, barX + (int) (barW * frac), barY + 8, 0xFF000000 | color);
-        if (showValue) {
-            g.text(font, Component.literal((long) previewValue + " / " + (long) max),
-                    barX + barW + 8, barY, PanelStyle.TEXT_DIM);
+        String name = entry.displayName();
+        int pvX = wellX + 16, pvY = wellY + 94;
+
+        switch (type) {
+            case "hidden" -> g.text(font,
+                    Component.literal("(hidden type - synced but never drawn)"),
+                    pvX, pvY + 8, PanelStyle.TEXT_DIM);
+            case "number" -> g.text(font,
+                    Component.literal(name + ": " + trimNum(previewValue)),
+                    pvX, pvY + 8, 0xFF000000 | color);
+            case "percentage" -> g.text(font,
+                    Component.literal(name + ": " + Math.round(frac * 100) + "%"),
+                    pvX, pvY + 8, 0xFF000000 | color);
+            case "icons" -> {
+                g.text(font, Component.literal(name), pvX, pvY, 0xFFFFFFFF);
+                String icon = JsonEdit.getString(entry.json, "display.icon", "");
+                int pips = 10;
+                int filled = (int) Math.round(frac * pips);
+                int pipY = pvY + 12;
+                for (int i = 0; i < pips; i++) {
+                    StatHudOverlay.drawIconSlot(g, icon, pvX + i * 10, pipY, i < filled, color);
+                }
+                if (showValue) {
+                    g.text(font, Component.literal(trimNum(previewValue)),
+                            pvX + pips * 10 + 4, pipY, 0xFFFFFFFF);
+                }
+            }
+            default -> {   // bar — the shared boss-bar painter
+                g.text(font, Component.literal(name), pvX, pvY, 0xFFFFFFFF);
+                int barY = pvY + 12;
+                int barW = Math.min(120, wellW - 140);
+                StatHudOverlay.drawBar(g, pvX, barY, barW, frac, color);
+                if (showValue) {
+                    g.text(font, Component.literal(trimNum(previewValue) + " / " + trimNum(max)),
+                            pvX + barW + 6, barY, 0xFFFFFFFF);
+                }
+            }
         }
 
+        // preview value slider
         g.text(font, Component.literal("PREVIEW VALUE"), wellX + 8, wellY + 136, PanelStyle.TEXT_DIM);
         int sliderX = wellX + 8, sliderY = wellY + 148, sliderW = wellW - 16;
         g.fill(sliderX, sliderY + 3, sliderX + sliderW, sliderY + 5, PanelStyle.PANEL_DARK);
@@ -694,10 +739,12 @@ public class StatEditorScreen extends Screen {
             }
             if (PanelStyle.hit(mx, my, wellX + 8, wellY + 48, 140, PanelStyle.CONTROL_H)) {
                 cycleString("hud.type", new String[]{"bar", "number", "percentage", "icons", "hidden"});
+                setPage(Page.DISPLAY);                                    // ← ADD
                 return true;
             }
             if (PanelStyle.hit(mx, my, wellX + 168, wellY + 48, 140, PanelStyle.CONTROL_H)) {
                 cycleString("hud.visibility", new String[]{"always", "never", "when_non_default", "above_value", "below_value"});
+                setPage(Page.DISPLAY);                                    // ← ADD
                 return true;
             }
             int sliderX = wellX + 8, sliderY = wellY + 148, sliderW = wellW - 16;

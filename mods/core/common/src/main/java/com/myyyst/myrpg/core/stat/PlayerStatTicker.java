@@ -75,9 +75,12 @@ public final class PlayerStatTicker {
                                                StatDef def, StatDef.Hud hud) {
         String name = def.display().flatMap(StatDef.Display::name).orElse(statId.getPath());
         String color = def.display().flatMap(StatDef.Display::color).orElse("#FFFFFF");
+        String icon = def.display().flatMap(StatDef.Display::icon)
+                .map(Identifier::toString).orElse("");
         return new RpgPayloads.StatEntry(statId, value,
-                def.value().min(), def.value().max(),
-                name, color, hud.type(), hud.visibility(), hud.showValue());
+                def.value().min(), def.value().max(), def.value().defaultValue(),
+                name, color, hud.type(), hud.visibility(),
+                hud.visibilityValue().orElse(0.0), hud.showValue(), icon);
     }
 
 

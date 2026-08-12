@@ -18,21 +18,31 @@ public final class RpgPayloads {
     // ================================================== HUD sync (existing)
 
     public record StatEntry(
-            Identifier statId, double value, double min, double max,
-            String name, String color, String hudType, String visibility, boolean showValue
+            Identifier statId, double value, double min, double max, double defaultValue,
+            String name, String color, String hudType, String visibility,
+            double visibilityValue, boolean showValue, String icon
     ) {
         public static final StreamCodec<RegistryFriendlyByteBuf, StatEntry> STREAM_CODEC =
-                StreamCodec.composite(
-                        Identifier.STREAM_CODEC, StatEntry::statId,
-                        ByteBufCodecs.DOUBLE, StatEntry::value,
-                        ByteBufCodecs.DOUBLE, StatEntry::min,
-                        ByteBufCodecs.DOUBLE, StatEntry::max,
-                        ByteBufCodecs.STRING_UTF8, StatEntry::name,
-                        ByteBufCodecs.STRING_UTF8, StatEntry::color,
-                        ByteBufCodecs.STRING_UTF8, StatEntry::hudType,
-                        ByteBufCodecs.STRING_UTF8, StatEntry::visibility,
-                        ByteBufCodecs.BOOL, StatEntry::showValue,
-                        StatEntry::new);
+                StreamCodec.of(
+                        (buf, e) -> {
+                            Identifier.STREAM_CODEC.encode(buf, e.statId());
+                            buf.writeDouble(e.value());
+                            buf.writeDouble(e.min());
+                            buf.writeDouble(e.max());
+                            buf.writeDouble(e.defaultValue());
+                            buf.writeUtf(e.name());
+                            buf.writeUtf(e.color());
+                            buf.writeUtf(e.hudType());
+                            buf.writeUtf(e.visibility());
+                            buf.writeDouble(e.visibilityValue());
+                            buf.writeBoolean(e.showValue());
+                            buf.writeUtf(e.icon());
+                        },
+                        buf -> new StatEntry(
+                                Identifier.STREAM_CODEC.decode(buf),
+                                buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble(),
+                                buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(),
+                                buf.readDouble(), buf.readBoolean(), buf.readUtf()));
     }
 
     public record SyncStats(List<StatEntry> entries) implements CustomPacketPayload {

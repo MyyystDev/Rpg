@@ -1,0 +1,98 @@
+package com.myyyst.myrpg.entities.ai;
+
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.myyyst.myrpg.entities.entity.RpgEntity;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
+import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
+import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
+import net.minecraft.world.entity.player.Player;
+import org.jspecify.annotations.Nullable;
+
+/** Built-in AI goal providers.
+ *  NOTE drift: vanilla goal class names / constructor shapes — verify via
+ *  autocomplete; the data side is stable regardless. */
+public final class AiGoals {
+
+    private static Identifier id(String path) {
+        return Identifier.fromNamespaceAndPath("myrpg_entities", path);
+    }
+
+    public record RandomWalk(int priority, double speed) implements AiGoalDef {
+        public static final MapCodec<RandomWalk> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.INT.optionalFieldOf("priority", 5).forGetter(RandomWalk::priority),
+                Codec.DOUBLE.optionalFieldOf("speed", 1.0).forGetter(RandomWalk::speed)
+        ).apply(i, RandomWalk::new));
+        @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
+        @Override public Goal build(RpgEntity entity) {
+            return new RandomStrollGoal(entity, speed);
+        }
+    }
+
+    public record LookAtPlayer(int priority, double range) implements AiGoalDef {
+        public static final MapCodec<LookAtPlayer> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.INT.optionalFieldOf("priority", 7).forGetter(LookAtPlayer::priority),
+                Codec.DOUBLE.optionalFieldOf("range", 8.0).forGetter(LookAtPlayer::range)
+        ).apply(i, LookAtPlayer::new));
+        @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
+        @Override public Goal build(RpgEntity entity) {
+            return new LookAtPlayerGoal(entity, Player.class, (float) range);
+        }
+    }
+
+    public record LookAround(int priority) implements AiGoalDef {
+        public static final MapCodec<LookAround> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.INT.optionalFieldOf("priority", 8).forGetter(LookAround::priority)
+        ).apply(i, LookAround::new));
+        @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
+        @Override public Goal build(RpgEntity entity) {
+            return new RandomLookAroundGoal(entity);
+        }
+    }
+
+    public record MeleeAttack(int priority, double speed) implements AiGoalDef {
+        public static final MapCodec<MeleeAttack> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.INT.optionalFieldOf("priority", 2).forGetter(MeleeAttack::priority),
+                Codec.DOUBLE.optionalFieldOf("speed", 1.0).forGetter(MeleeAttack::speed)
+        ).apply(i, MeleeAttack::new));
+        @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
+        @Override public Goal build(RpgEntity entity) {
+            // NOTE drift: (mob, speed, followEvenIfNotSeen)
+            return new MeleeAttackGoal(entity, speed, true);
+        }
+    }
+
+    public record FollowPlayer(int priority, double speed, double stopDistance) implements AiGoalDef {
+        public static final MapCodec<FollowPlayer> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.INT.optionalFieldOf("priority", 4).forGetter(FollowPlayer::priority),
+                Codec.DOUBLE.optionalFieldOf("speed", 1.0).forGetter(FollowPlayer::speed),
+                Codec.DOUBLE.optionalFieldOf("stop_distance", 3.0).forGetter(FollowPlayer::stopDistance)
+        ).apply(i, FollowPlayer::new));
+        @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
+        @Override public @Nullable Goal build(RpgEntity entity) { return null; }   // slice 2
+    }
+
+    public record GuardPosition(int priority, double radius) implements AiGoalDef {
+        public static final MapCodec<GuardPosition> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
+                Codec.INT.optionalFieldOf("priority", 3).forGetter(GuardPosition::priority),
+                Codec.DOUBLE.optionalFieldOf("radius", 16.0).forGetter(GuardPosition::radius)
+        ).apply(i, GuardPosition::new));
+        @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
+        @Override public @Nullable Goal build(RpgEntity entity) { return null; }   // slice 2
+    }
+
+    public static void init() {
+        AiGoalDef.REGISTRY.register(id("random_walk"), RandomWalk.CODEC);
+        AiGoalDef.REGISTRY.register(id("look_at_player"), LookAtPlayer.CODEC);
+        AiGoalDef.REGISTRY.register(id("look_around"), LookAround.CODEC);
+        AiGoalDef.REGISTRY.register(id("melee_attack"), MeleeAttack.CODEC);
+        AiGoalDef.REGISTRY.register(id("follow_player"), FollowPlayer.CODEC);
+        AiGoalDef.REGISTRY.register(id("guard_position"), GuardPosition.CODEC);
+    }
+
+    private AiGoals() {}
+}
