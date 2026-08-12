@@ -1,0 +1,28 @@
+{
+  "display": {
+    "name": "Guard",
+    "name_visible": true
+  },
+  "attributes": {
+    "minecraft:max_health": 40,
+    "minecraft:movement_speed": 0.3,
+    "minecraft:attack_damage": 6
+  },
+  "equipment": {
+    "mainhand": "minecraft:iron_sword",
+    "chest": "minecraft:iron_chestplate"
+  },
+  "movement": { "can_open_doors": true },
+  "ai": [
+    { "type": "myrpg_entities:guard_position", "priority": 3, "radius": 16 },
+    { "type": "myrpg_entities:random_walk", "priority": 5, "speed": 0.8 },
+    { "type": "myrpg_entities:look_at_player", "priority": 7 },
+    { "type": "myrpg_entities:look_around", "priority": 8 }
+  ],
+  "targeting": [
+    { "type": "myrpg_entities:retaliate", "priority": 1 },
+    { "type": "myrpg_entities:entity_type", "priority": 2, "entity": "minecraft:zombie" }
+  ],
+  "combat": { "type": "melee" },
+  "persistence": { "despawn": false }
+}

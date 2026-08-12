@@ -2,6 +2,7 @@ package com.myyyst.myrpg.entities;
 
 import com.myyyst.myrpg.entities.ai.AiGoals;
 import com.myyyst.myrpg.entities.ai.Targets;
+import com.myyyst.myrpg.entities.command.EntityCommands;
 
 public final class MyrpgEntities {
 
@@ -10,8 +11,9 @@ public final class MyrpgEntities {
     public static void init() {
         AiGoals.init();
         Targets.init();
+        EntityCommands.init();
         // Reload-listener registration for EntitiesData.ENTITIES happens per
-        // loader (keep the archetype-era lines in each entrypoint).
+        // loader in each entrypoint.
     }
 
     private MyrpgEntities() {}

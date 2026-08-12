@@ -3,6 +3,8 @@ package com.myyyst.myrpg.entities.ai;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.myyyst.myrpg.entities.ai.goal.FollowPlayerGoal;
+import com.myyyst.myrpg.entities.ai.goal.GuardPositionGoal;
 import com.myyyst.myrpg.entities.entity.RpgEntity;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -11,11 +13,8 @@ import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
-import org.jspecify.annotations.Nullable;
 
-/** Built-in AI goal providers.
- *  NOTE drift: vanilla goal class names / constructor shapes — verify via
- *  autocomplete; the data side is stable regardless. */
+/** Built-in AI goal providers. */
 public final class AiGoals {
 
     private static Identifier id(String path) {
@@ -61,28 +60,34 @@ public final class AiGoals {
         ).apply(i, MeleeAttack::new));
         @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
         @Override public Goal build(RpgEntity entity) {
-            // NOTE drift: (mob, speed, followEvenIfNotSeen)
             return new MeleeAttackGoal(entity, speed, true);
         }
     }
 
-    public record FollowPlayer(int priority, double speed, double stopDistance) implements AiGoalDef {
+    public record FollowPlayer(int priority, double speed, double stopDistance, double range)
+            implements AiGoalDef {
         public static final MapCodec<FollowPlayer> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 4).forGetter(FollowPlayer::priority),
                 Codec.DOUBLE.optionalFieldOf("speed", 1.0).forGetter(FollowPlayer::speed),
-                Codec.DOUBLE.optionalFieldOf("stop_distance", 3.0).forGetter(FollowPlayer::stopDistance)
+                Codec.DOUBLE.optionalFieldOf("stop_distance", 3.0).forGetter(FollowPlayer::stopDistance),
+                Codec.DOUBLE.optionalFieldOf("range", 32.0).forGetter(FollowPlayer::range)
         ).apply(i, FollowPlayer::new));
         @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
-        @Override public @Nullable Goal build(RpgEntity entity) { return null; }   // slice 2
+        @Override public Goal build(RpgEntity entity) {
+            return new FollowPlayerGoal(entity, speed, stopDistance, range);
+        }
     }
 
-    public record GuardPosition(int priority, double radius) implements AiGoalDef {
+    public record GuardPosition(int priority, double speed, double radius) implements AiGoalDef {
         public static final MapCodec<GuardPosition> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 3).forGetter(GuardPosition::priority),
+                Codec.DOUBLE.optionalFieldOf("speed", 1.0).forGetter(GuardPosition::speed),
                 Codec.DOUBLE.optionalFieldOf("radius", 16.0).forGetter(GuardPosition::radius)
         ).apply(i, GuardPosition::new));
         @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
-        @Override public @Nullable Goal build(RpgEntity entity) { return null; }   // slice 2
+        @Override public Goal build(RpgEntity entity) {
+            return new GuardPositionGoal(entity, speed, radius);
+        }
     }
 
     public static void init() {

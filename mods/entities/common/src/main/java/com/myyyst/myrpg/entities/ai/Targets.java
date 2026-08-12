@@ -4,12 +4,13 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.myyyst.myrpg.entities.entity.RpgEntity;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
-import org.jspecify.annotations.Nullable;
 
 /** Built-in target-selection providers. */
 public final class Targets {
@@ -24,7 +25,6 @@ public final class Targets {
         ).apply(i, AttackPlayer::new));
         @Override public MapCodec<? extends TargetDef> codec() { return CODEC; }
         @Override public Goal build(RpgEntity entity) {
-            // NOTE drift: (mob, targetClass, mustSee)
             return new NearestAttackableTargetGoal<>(entity, Player.class, true);
         }
     }
@@ -45,7 +45,15 @@ public final class Targets {
                 Identifier.CODEC.fieldOf("entity").forGetter(AttackEntityType::entityType)
         ).apply(i, AttackEntityType::new));
         @Override public MapCodec<? extends TargetDef> codec() { return CODEC; }
-        @Override public @Nullable Goal build(RpgEntity entity) { return null; }   // slice 2
+        @Override public Goal build(RpgEntity entity) {
+            // NOTE drift: the last parameter is TargetingConditions.Selector in
+            // current mappings — a (LivingEntity, ServerLevel) predicate. If your
+            // version wants Predicate<LivingEntity>, drop the level parameter.
+            return new NearestAttackableTargetGoal<>(entity, LivingEntity.class,
+                    10, true, false,
+                    (living, level) -> entityType.equals(
+                            BuiltInRegistries.ENTITY_TYPE.getKey(living.getType())));
+        }
     }
 
     public static void init() {

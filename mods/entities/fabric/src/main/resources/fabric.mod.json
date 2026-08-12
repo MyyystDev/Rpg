@@ -8,7 +8,8 @@
     "license": "${license}",
     "environment": "*",
     "entrypoints": {
-        "main": ["com.myyyst.myrpg.entities.MyrpgEntitiesFabric"]
+        "main": ["com.myyyst.myrpg.entities.MyrpgEntitiesFabric"],
+        "client": ["com.myyyst.myrpg.entities.MyrpgEntitiesFabricClient"]
     },
     "depends": {
         "fabricloader": ">=${fabric_loader_version}",

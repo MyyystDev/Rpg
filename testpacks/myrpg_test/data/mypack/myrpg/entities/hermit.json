@@ -1,0 +1,71 @@
+{
+  "display": {
+    "name": "Old Hermit",
+    "name_visible": true
+  },
+  "attributes": {
+    "minecraft:max_health": 20
+  },
+  "stats": {
+    "mypack:rage": 0
+  },
+  "ai": [
+    {
+      "type": "myrpg_entities:look_at_player",
+      "priority": 7
+    },
+    {
+      "type": "myrpg_entities:look_around",
+      "priority": 8
+    }
+  ],
+  "interactions": [
+    {
+      "conditions": [
+        {
+          "type": "myrpg_core:stat",
+          "stat": "mypack:rage",
+          "operator": ">=",
+          "value": 50
+        }
+      ],
+      "actions": [
+        {
+          "type": "myrpg_core:speak",
+          "text": "ENOUGH! Leave me alone!",
+          "range": 16
+        },
+        {
+          "type": "myrpg_core:play_sound",
+          "sound": "minecraft:entity.villager.no",
+          "volume": 1.0,
+          "pitch": 0.8
+        }
+      ]
+    },
+    {
+      "actions": [
+        {
+          "type": "myrpg_core:speak",
+          "text": "Hello, traveler. These woods are dangerous.",
+          "range": 16
+        },
+        {
+          "type": "myrpg_core:modify_stat",
+          "stat": "mypack:rage",
+          "operation": "add",
+          "value": 20
+        },
+        {
+          "type": "myrpg_core:play_sound",
+          "sound": "minecraft:entity.villager.yes",
+          "volume": 1.0,
+          "pitch": 1.0
+        }
+      ]
+    }
+  ],
+  "persistence": {
+    "despawn": false
+  }
+}

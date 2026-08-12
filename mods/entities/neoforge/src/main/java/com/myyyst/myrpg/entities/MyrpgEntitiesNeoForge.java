@@ -2,6 +2,7 @@ package com.myyyst.myrpg.entities;
 
 import com.myyyst.myrpg.entities.data.EntitiesData;
 import com.myyyst.myrpg.entities.entity.RpgEntity;
+import com.myyyst.myrpg.entities.registry.RpgEntityTypes;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -22,18 +23,22 @@ public class MyrpgEntitiesNeoForge {
             DeferredRegister.create(Registries.ENTITY_TYPE, MyrpgEntities.MOD_ID);
 
     public static final DeferredHolder<EntityType<?>, EntityType<RpgEntity>> RPG_ENTITY =
-            ENTITY_TYPES.register("rpg_entity",
-                    // NeoForge — inside the register supplier:
+            ENTITY_TYPES.register(RpgEntityTypes.RPG_ENTITY_ID,
                     () -> EntityType.Builder.of(RpgEntity::new, MobCategory.CREATURE)
                             .sized(0.6f, 1.95f)
                             .build(ResourceKey.create(Registries.ENTITY_TYPE,
-                                    Identifier.fromNamespaceAndPath(MyrpgEntities.MOD_ID, "rpg_entity"))));
-    // NOTE drift: build argument shape — keep the archetype-era line.
+                                    Identifier.fromNamespaceAndPath(
+                                            MyrpgEntities.MOD_ID, RpgEntityTypes.RPG_ENTITY_ID))));
 
     public MyrpgEntitiesNeoForge(IEventBus modBus) {
         ENTITY_TYPES.register(modBus);
         modBus.addListener(this::onAttributes);
         NeoForge.EVENT_BUS.addListener(this::onReload);
+        RpgEntityTypes.setRpg_entity(RPG_ENTITY::get);
+
+        if (net.neoforged.fml.loading.FMLEnvironment.getDist() == net.neoforged.api.distmarker.Dist.CLIENT) {
+            modBus.register(com.myyyst.myrpg.entities.client.EntitiesClientEvents.class);
+        }
         MyrpgEntities.init();
     }
 

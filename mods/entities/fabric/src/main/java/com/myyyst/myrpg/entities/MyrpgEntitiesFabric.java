@@ -1,8 +1,8 @@
 package com.myyyst.myrpg.entities;
 
-import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.entities.data.EntitiesData;
 import com.myyyst.myrpg.entities.entity.RpgEntity;
+import com.myyyst.myrpg.entities.registry.RpgEntityTypes;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
 import net.fabricmc.fabric.api.resource.IdentifiableResourceReloadListener;
@@ -26,10 +26,8 @@ public class MyrpgEntitiesFabric implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        // NOTE drift: EntityType.Builder.build argument + registration shape —
-        // keep the archetype-era lines that compiled.
-        // Fabric — build the key once, use for both register + build:
-        Identifier entityId = Identifier.fromNamespaceAndPath(MyrpgEntities.MOD_ID, "rpg_entity");
+        Identifier entityId = Identifier.fromNamespaceAndPath(
+                MyrpgEntities.MOD_ID, RpgEntityTypes.RPG_ENTITY_ID);
         ResourceKey<EntityType<?>> key = ResourceKey.create(Registries.ENTITY_TYPE, entityId);
         RPG_ENTITY = Registry.register(BuiltInRegistries.ENTITY_TYPE, entityId,
                 EntityType.Builder.of(RpgEntity::new, MobCategory.CREATURE)
@@ -37,14 +35,10 @@ public class MyrpgEntitiesFabric implements ModInitializer {
                         .build(key));
 
         FabricDefaultAttributeRegistry.register(RPG_ENTITY, RpgEntity.createAttributes());
+        RpgEntityTypes.setRpg_entity(() -> RPG_ENTITY);
 
         ResourceManagerHelper.get(PackType.SERVER_DATA)
                 .registerReloadListener(new ReloadAdapter("entities", EntitiesData.ENTITIES));
-        // NOTE drift: if RpgDataManager needs an id for Fabric's listener,
-        // keep the archetype-era registration line.
-
-        ResourceManagerHelper.get(PackType.SERVER_DATA)
-                .registerReloadListener(new ReloadAdapter("conditions", CoreData.NAMED_CONDITIONS));
 
         MyrpgEntities.init();
     }
@@ -55,7 +49,7 @@ public class MyrpgEntitiesFabric implements ModInitializer {
         private final PreparableReloadListener listener;
 
         ReloadAdapter(String path, PreparableReloadListener listener) {
-            this.id = Identifier.fromNamespaceAndPath(Constants.MOD_ID, path);   // entities' Constants
+            this.id = Identifier.fromNamespaceAndPath(Constants.MOD_ID, path);
             this.listener = listener;
         }
 

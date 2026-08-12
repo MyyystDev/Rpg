@@ -16,6 +16,6 @@ public interface AiGoalDef {
     /** Priority in the goal selector; lower runs first. */
     int priority();
 
-    /** Builds the vanilla goal. Null = provider arrives in slice 2. */
+    /** Builds the vanilla goal. Null = goal unavailable for this entity. */
     @Nullable Goal build(RpgEntity entity);
 }

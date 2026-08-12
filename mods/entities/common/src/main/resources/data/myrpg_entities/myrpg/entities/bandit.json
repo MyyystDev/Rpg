@@ -1,0 +1,25 @@
+{
+  "display": {
+    "name": "Bandit"
+  },
+  "attributes": {
+    "minecraft:max_health": 24,
+    "minecraft:movement_speed": 0.28,
+    "minecraft:attack_damage": 5
+  },
+  "equipment": {
+    "mainhand": "minecraft:stone_sword"
+  },
+  "ai": [
+    { "type": "myrpg_entities:melee_attack", "priority": 2, "speed": 1.2 },
+    { "type": "myrpg_entities:random_walk", "priority": 5 },
+    { "type": "myrpg_entities:look_around", "priority": 8 }
+  ],
+  "targeting": [
+    { "type": "myrpg_entities:retaliate", "priority": 1 },
+    { "type": "myrpg_entities:player", "priority": 2 }
+  ],
+  "combat": { "type": "melee" },
+  "loot": { "xp": 5 },
+  "persistence": { "despawn": true }
+}

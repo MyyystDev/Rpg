@@ -59,6 +59,11 @@ public class MyRpgFabric implements ModInitializer {
                         new ReloadAdapter("stats", CoreData.STATS)
                 );
 
+        ResourceManagerHelper.get(PackType.SERVER_DATA)
+                .registerReloadListener(
+                        new ReloadAdapter("conditions", CoreData.NAMED_CONDITIONS)
+                );
+
         ServerTickEvents.END_SERVER_TICK.register(
                 PlayerStatTicker::tick
         );

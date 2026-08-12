@@ -1,0 +1,85 @@
+{
+  "display": {
+    "name": "Berserker",
+    "name_visible": true
+  },
+  "appearance": {
+    "scale": 1.2
+  },
+  "attributes": {
+    "minecraft:max_health": 30,
+    "minecraft:movement_speed": 0.25,
+    "minecraft:attack_damage": 4
+  },
+  "stats": {
+    "mypack:rage": 30
+  },
+  "equipment": {
+    "mainhand": "minecraft:iron_axe"
+  },
+  "ai": [
+    {
+      "type": "myrpg_entities:melee_attack",
+      "priority": 2,
+      "speed": 1.2
+    },
+    {
+      "type": "myrpg_entities:random_walk",
+      "priority": 5
+    },
+    {
+      "type": "myrpg_entities:look_around",
+      "priority": 8
+    }
+  ],
+  "targeting": [
+    {
+      "type": "myrpg_entities:retaliate",
+      "priority": 1
+    },
+    {
+      "type": "myrpg_entities:player",
+      "priority": 2
+    }
+  ],
+  "combat": {
+    "type": "melee"
+  },
+  "loot": {
+    "loot_table": "mypack:entities/berserker",
+    "xp": 10
+  },
+  "persistence": {
+    "despawn": false
+  },
+  "rules": [
+    {
+      "trigger": {
+        "type": "myrpg_core:event",
+        "event": "myrpg_entities:entity_hurt"
+      },
+      "actions": [
+        {
+          "type": "myrpg_core:modify_stat",
+          "stat": "mypack:rage",
+          "operation": "add",
+          "value": 10
+        }
+      ]
+    },
+    {
+      "trigger": {
+        "type": "myrpg_core:event",
+        "event": "myrpg_entities:entity_death"
+      },
+      "actions": [
+        {
+          "type": "myrpg_core:play_sound",
+          "sound": "minecraft:entity.lightning_bolt.thunder",
+          "volume": 0.6,
+          "pitch": 1.4
+        }
+      ]
+    }
+  ]
+}

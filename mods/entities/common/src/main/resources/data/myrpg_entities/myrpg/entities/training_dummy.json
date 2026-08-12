@@ -1,0 +1,14 @@
+{
+  "display": {
+    "name": "Training Dummy",
+    "name_visible": true
+  },
+  "attributes": {
+    "minecraft:max_health": 100,
+    "minecraft:knockback_resistance": 1.0
+  },
+  "ai": [
+    { "type": "myrpg_entities:look_at_player", "range": 8 }
+  ],
+  "persistence": { "despawn": false }
+}

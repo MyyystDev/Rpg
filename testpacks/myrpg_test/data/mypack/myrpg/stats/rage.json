@@ -1,0 +1,54 @@
+{
+  "display": {
+    "name": "Rage",
+    "color": "#FF4422"
+  },
+  "value": {
+    "type": "stored",
+    "default": 0,
+    "min": 0,
+    "max": 100,
+    "decimal": false,
+    "clamp": true
+  },
+  "stages": [
+    {
+      "id": "calm",
+      "min": 0,
+      "max": 49
+    },
+    {
+      "id": "enraged",
+      "min": 50,
+      "max": 100,
+      "effects": [
+        {
+          "type": "myrpg_core:attribute",
+          "attribute": "minecraft:movement_speed",
+          "operation": "add_multiplied_base",
+          "value": 0.3
+        },
+        {
+          "type": "myrpg_core:attribute",
+          "attribute": "minecraft:attack_damage",
+          "operation": "add_value",
+          "value": 4
+        }
+      ],
+      "on_enter": [
+        {
+          "type": "myrpg_core:play_sound",
+          "sound": "minecraft:entity.blaze.ambient",
+          "volume": 1.0,
+          "pitch": 0.7
+        }
+      ]
+    }
+  ],
+  "hud": {
+    "visible": true,
+    "type": "bar",
+    "visibility": "when_non_default",
+    "show_value": true
+  }
+}
