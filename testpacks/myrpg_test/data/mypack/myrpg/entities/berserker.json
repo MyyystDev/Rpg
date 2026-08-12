@@ -4,6 +4,8 @@
     "name_visible": true
   },
   "appearance": {
+    "model": "myrpg_entities:zombie",
+    "texture": "minecraft:textures/entity/zombie/husk.png",
     "scale": 1.2
   },
   "attributes": {

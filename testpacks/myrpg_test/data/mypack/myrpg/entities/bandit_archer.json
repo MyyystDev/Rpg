@@ -1,0 +1,55 @@
+{
+  "display": {
+    "name": "Bandit Archer",
+    "name_visible": true
+  },
+  "appearance": {
+    "model": "myrpg_entities:skeleton",
+    "texture": "minecraft:textures/entity/skeleton/stray.png"
+  },
+  "attributes": {
+    "minecraft:max_health": 20,
+    "minecraft:movement_speed": 0.27,
+    "minecraft:follow_range": 24
+  },
+  "equipment": {
+    "mainhand": "minecraft:bow"
+  },
+  "ai": [
+    {
+      "type": "myrpg_entities:flee_low_health",
+      "priority": 1,
+      "threshold": 0.35
+    },
+    {
+      "type": "myrpg_entities:random_walk",
+      "priority": 5
+    },
+    {
+      "type": "myrpg_entities:look_around",
+      "priority": 8
+    }
+  ],
+  "targeting": [
+    {
+      "type": "myrpg_entities:retaliate",
+      "priority": 1
+    },
+    {
+      "type": "myrpg_entities:player",
+      "priority": 2
+    }
+  ],
+  "combat": {
+    "type": "ranged",
+    "range": 15,
+    "cooldown": 30,
+    "projectile_speed": 1.6
+  },
+  "loot": {
+    "xp": 5
+  },
+  "persistence": {
+    "despawn": true
+  }
+}

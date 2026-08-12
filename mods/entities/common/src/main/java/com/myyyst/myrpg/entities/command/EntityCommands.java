@@ -10,6 +10,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.IdentifierArgument;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -39,7 +40,9 @@ public final class EntityCommands {
 
                 .then(Commands.literal("list").executes(EntityCommands::list))
 
-                .then(Commands.literal("inspect").executes(EntityCommands::inspect))));
+                .then(Commands.literal("inspect").executes(EntityCommands::inspect))
+
+                .then(Commands.literal("sethome").executes(EntityCommands::setHome))));
     }
 
     // ------------------------------------------------------------ spawn
@@ -122,6 +125,28 @@ public final class EntityCommands {
                                 + (stage != null ? " (stage: " + stage + ")" : "")), false);
             }
         }
+        return 1;
+    }
+
+    // ------------------------------------------------------------ sethome
+
+    /** Sets the nearest custom entity's guard/home anchor to where you stand. */
+    private static int setHome(CommandContext<CommandSourceStack> ctx) {
+        ServerLevel level = ctx.getSource().getLevel();
+        Vec3 pos = ctx.getSource().getPosition();
+        RpgEntity nearest = level.getEntitiesOfClass(
+                        RpgEntity.class, AABB.ofSize(pos, 16, 16, 16)).stream()
+                .min(Comparator.comparingDouble(e -> e.position().distanceToSqr(pos)))
+                .orElse(null);
+        if (nearest == null) {
+            ctx.getSource().sendFailure(Component.literal("No custom entity within 8 blocks"));
+            return 0;
+        }
+        BlockPos home = BlockPos.containing(pos);
+        nearest.setGuardAnchor(home);
+        ctx.getSource().sendSuccess(() -> Component.literal(
+                "Home of " + nearest.definitionIdString() + " set to "
+                        + home.getX() + " " + home.getY() + " " + home.getZ()), true);
         return 1;
     }
 

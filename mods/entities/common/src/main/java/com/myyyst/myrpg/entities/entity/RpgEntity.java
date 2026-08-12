@@ -23,12 +23,14 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -37,7 +39,12 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.goal.RangedAttackGoal;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
+import net.minecraft.world.entity.monster.RangedAttackMob;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -54,7 +61,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.Optional;
 
 /** The one generic base entity. Everything else is data. */
-public class RpgEntity extends PathfinderMob implements StatHolder {
+public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttackMob {
 
     private final StatStore stats = new StatStore();
     @Nullable private Identifier definitionId;
@@ -62,6 +69,10 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
     private boolean allowDespawn = false;
 
     private static final EntityDataAccessor<String> DATA_DEFINITION =
+            SynchedEntityData.defineId(RpgEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_MODEL =
+            SynchedEntityData.defineId(RpgEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_TEXTURE =
             SynchedEntityData.defineId(RpgEntity.class, EntityDataSerializers.STRING);
 
     public RpgEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -72,6 +83,8 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(DATA_DEFINITION, "");
+        builder.define(DATA_MODEL, "");
+        builder.define(DATA_TEXTURE, "");
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -85,6 +98,16 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
     /** Definition id as synced string — readable client-side (rendering uses this). */
     public String definitionIdString() {
         return entityData.get(DATA_DEFINITION);
+    }
+
+    /** Model id from the definition's appearance — client render picks by this. */
+    public String modelIdString() {
+        return entityData.get(DATA_MODEL);
+    }
+
+    /** Explicit texture from the definition, or "" for the model's default. */
+    public String textureString() {
+        return entityData.get(DATA_TEXTURE);
     }
 
     @Nullable
@@ -152,6 +175,13 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
      * load, because it writes no health/stats/equipment.
      */
     private void applyRuntime(EntityDefinition def) {
+        // appearance sync — the client renderer reads these
+        entityData.set(DATA_MODEL, def.appearance()
+                .map(EntityDefinition.Appearance::model).orElse("myrpg_entities:humanoid"));
+        entityData.set(DATA_TEXTURE, def.appearance()
+                .flatMap(EntityDefinition.Appearance::texture)
+                .map(Identifier::toString).orElse(""));
+
         // scale (also scales the hitbox via the vanilla scale attribute)
         def.appearance().ifPresent(a -> {
             AttributeInstance scale = getAttribute(Attributes.SCALE);
@@ -176,16 +206,28 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
         if (canSwim) goalSelector.addGoal(0, new FloatGoal(this));
 
         boolean hasMeleeGoal = false;
+        boolean hasRangedGoal = false;
         for (AiGoalDef goalDef : def.ai()) {
             Goal goal = goalDef.build(this);
             if (goal == null) continue;
             if (goal instanceof MeleeAttackGoal) hasMeleeGoal = true;
+            if (goal instanceof RangedAttackGoal) hasRangedGoal = true;
             goalSelector.addGoal(goalDef.priority(), goal);
         }
 
-        // combat: melee implies an attack goal even if the ai list omits it
-        if (!hasMeleeGoal && def.combat().map(c -> "melee".equals(c.type())).orElse(false)) {
+        // combat: the configured style implies an attack goal even if the
+        // ai list omits it
+        String combatType = def.combat().map(EntityDefinition.Combat::type).orElse("none");
+        if (!hasMeleeGoal && "melee".equals(combatType)) {
             goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.2, true));
+        }
+        if (!hasRangedGoal && "ranged".equals(combatType)) {
+            EntityDefinition.Combat combat = def.combat().orElseThrow();
+            // the record's range default (2.0) is a melee reach — useless for
+            // ranged, so fall back to a sensible bow range
+            float range = (float) (combat.range() > 2.0 ? combat.range() : 15.0);
+            goalSelector.addGoal(2, new RangedAttackGoal(this, 1.0,
+                    Math.max(1, combat.cooldown()), range));
         }
 
         for (TargetDef targetDef : def.targeting()) {
@@ -234,6 +276,36 @@ public class RpgEntity extends PathfinderMob implements StatHolder {
             StatEngine.tick(stats, this);
         }
         definition().ifPresent(def -> EntityRuleEngine.tick(this, def));
+    }
+
+    // ------------------------------------------------------------ ranged combat
+
+    @Override
+    public void performRangedAttack(LivingEntity target, float power) {
+        ItemStack projectileStack = rangedProjectile();
+        AbstractArrow arrow = ProjectileUtil.getMobArrow(this, projectileStack, power, getMainHandItem());
+        double xd = target.getX() - getX();
+        double yd = target.getY(0.3333333333333333) - arrow.getY();
+        double zd = target.getZ() - getZ();
+        double horizontal = Math.sqrt(xd * xd + zd * zd);
+        double speed = definition().flatMap(EntityDefinition::combat)
+                .map(EntityDefinition.Combat::projectileSpeed).orElse(1.6);
+        if (level() instanceof ServerLevel serverLevel) {
+            Projectile.spawnProjectileUsingShoot(arrow, serverLevel, projectileStack,
+                    xd, yd + horizontal * 0.2, zd, (float) speed, 2.0f);
+        }
+        playSound(SoundEvents.SKELETON_SHOOT, 1.0f,
+                1.0f / (getRandom().nextFloat() * 0.4f + 0.8f));
+    }
+
+    /** Arrow-family item from combat.projectile, defaulting to a plain arrow. */
+    private ItemStack rangedProjectile() {
+        Identifier id = definition().flatMap(EntityDefinition::combat)
+                .flatMap(EntityDefinition.Combat::projectile)
+                .map(Identifier::tryParse).orElse(null);
+        Item item = id == null ? null : BuiltInRegistries.ITEM.getValue(id);
+        if (item == null || item == Items.AIR) return new ItemStack(Items.ARROW);
+        return new ItemStack(item);
     }
 
     // ------------------------------------------------------------ interactions

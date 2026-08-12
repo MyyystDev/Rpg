@@ -67,11 +67,14 @@ public record EntityDefinition(
         ).apply(i, Movement::new));
     }
 
-    public record Combat(String type, double range, int cooldown) {
+    public record Combat(String type, double range, int cooldown,
+                         Optional<String> projectile, double projectileSpeed) {
         public static final Codec<Combat> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.optionalFieldOf("type", "none").forGetter(Combat::type),
                 Codec.DOUBLE.optionalFieldOf("range", 2.0).forGetter(Combat::range),
-                Codec.INT.optionalFieldOf("cooldown", 20).forGetter(Combat::cooldown)
+                Codec.INT.optionalFieldOf("cooldown", 20).forGetter(Combat::cooldown),
+                Codec.STRING.optionalFieldOf("projectile").forGetter(Combat::projectile),
+                Codec.DOUBLE.optionalFieldOf("projectile_speed", 1.6).forGetter(Combat::projectileSpeed)
         ).apply(i, Combat::new));
     }
 

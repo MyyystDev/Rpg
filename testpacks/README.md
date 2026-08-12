@@ -41,3 +41,16 @@ Test checklist:
   `myrpg_entities:entity_hurt` → +10 rage; at 50 he crosses into the
   "enraged" stage mid-fight (blaze sound, +30% speed, +4 damage). On death
   a thunder clap plays. Tests entity_hurt/entity_death rules end-to-end.
+
+### Appearance additions
+- Berserker: zombie model + husk texture, hermit: slim humanoid, zombie
+  hunter: skeleton model. Built-in models: myrpg_entities:humanoid,
+  humanoid_slim, zombie, skeleton. `appearance.texture` accepts any
+  resource-pack texture path.
+
+### Ranged combat + AI toolbox additions
+- `mypack:bandit_archer` — stray-textured skeleton with a bow: kites you at
+  range 15 (arrows via combat type "ranged"), flees when below 35% health.
+- Hermit now avoids creepers (avoid_entity goal).
+- `/myrpg entity sethome` — stand somewhere, run it, nearest custom entity
+  anchors its guard/home position there (persists through save/load).

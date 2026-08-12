@@ -13,15 +13,43 @@
     "head": "minecraft:chainmail_helmet"
   },
   "ai": [
-    { "type": "myrpg_entities:guard_position", "priority": 3, "radius": 24 },
-    { "type": "myrpg_entities:random_walk", "priority": 5, "speed": 0.8 },
-    { "type": "myrpg_entities:look_at_player", "priority": 7 },
-    { "type": "myrpg_entities:look_around", "priority": 8 }
+    {
+      "type": "myrpg_entities:guard_position",
+      "priority": 3,
+      "radius": 24
+    },
+    {
+      "type": "myrpg_entities:random_walk",
+      "priority": 5,
+      "speed": 0.8
+    },
+    {
+      "type": "myrpg_entities:look_at_player",
+      "priority": 7
+    },
+    {
+      "type": "myrpg_entities:look_around",
+      "priority": 8
+    }
   ],
   "targeting": [
-    { "type": "myrpg_entities:retaliate", "priority": 1 },
-    { "type": "myrpg_entities:entity_type", "priority": 2, "entity": "minecraft:zombie" }
+    {
+      "type": "myrpg_entities:retaliate",
+      "priority": 1
+    },
+    {
+      "type": "myrpg_entities:entity_type",
+      "priority": 2,
+      "entity": "minecraft:zombie"
+    }
   ],
-  "combat": { "type": "melee" },
-  "persistence": { "despawn": false }
+  "combat": {
+    "type": "melee"
+  },
+  "persistence": {
+    "despawn": false
+  },
+  "appearance": {
+    "model": "myrpg_entities:skeleton"
+  }
 }

@@ -11,6 +11,12 @@
   },
   "ai": [
     {
+      "type": "myrpg_entities:avoid_entity",
+      "priority": 4,
+      "entity": "minecraft:creeper",
+      "distance": 10
+    },
+    {
       "type": "myrpg_entities:look_at_player",
       "priority": 7
     },
@@ -67,5 +73,8 @@
   ],
   "persistence": {
     "despawn": false
+  },
+  "appearance": {
+    "model": "myrpg_entities:humanoid_slim"
   }
 }
