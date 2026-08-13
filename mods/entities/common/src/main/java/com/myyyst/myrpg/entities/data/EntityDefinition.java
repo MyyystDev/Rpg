@@ -26,7 +26,8 @@ public record EntityDefinition(
         List<Interaction> interactions,
         Optional<Loot> loot,
         Optional<Persistence> persistence,
-        List<StatDef.Rule> rules
+        List<StatDef.Rule> rules,
+        List<String> effectImmunities   // "mypack:frozen" or "#rpg:crowd_control"
 ) {
 
     public record Display(Optional<String> name, Optional<String> description, boolean nameVisible) {
@@ -38,13 +39,15 @@ public record EntityDefinition(
     }
 
     public record Appearance(String model, Optional<Identifier> texture, double scale,
-                             Optional<Double> hitboxWidth, Optional<Double> hitboxHeight) {
+                             Optional<Double> hitboxWidth, Optional<Double> hitboxHeight,
+                             boolean glow) {
         public static final Codec<Appearance> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.optionalFieldOf("model", "myrpg_entities:humanoid").forGetter(Appearance::model),
                 Identifier.CODEC.optionalFieldOf("texture").forGetter(Appearance::texture),
                 Codec.DOUBLE.optionalFieldOf("scale", 1.0).forGetter(Appearance::scale),
                 Codec.DOUBLE.optionalFieldOf("hitbox_width").forGetter(Appearance::hitboxWidth),
-                Codec.DOUBLE.optionalFieldOf("hitbox_height").forGetter(Appearance::hitboxHeight)
+                Codec.DOUBLE.optionalFieldOf("hitbox_height").forGetter(Appearance::hitboxHeight),
+                Codec.BOOL.optionalFieldOf("glow", false).forGetter(Appearance::glow)
         ).apply(i, Appearance::new));
     }
 
@@ -61,19 +64,30 @@ public record EntityDefinition(
         ).apply(i, Equipment::new));
     }
 
-    public record Movement(boolean canSwim, boolean canOpenDoors) {
+    public record Movement(String type, boolean canSwim, boolean canOpenDoors, boolean avoidWater,
+                           boolean canJump, boolean canClimb, boolean canFly) {
         public static final Codec<Movement> CODEC = RecordCodecBuilder.create(i -> i.group(
+                Codec.STRING.optionalFieldOf("type", "ground").forGetter(Movement::type),
                 Codec.BOOL.optionalFieldOf("can_swim", true).forGetter(Movement::canSwim),
-                Codec.BOOL.optionalFieldOf("can_open_doors", false).forGetter(Movement::canOpenDoors)
+                Codec.BOOL.optionalFieldOf("can_open_doors", false).forGetter(Movement::canOpenDoors),
+                Codec.BOOL.optionalFieldOf("avoid_water", false).forGetter(Movement::avoidWater),
+                Codec.BOOL.optionalFieldOf("can_jump", true).forGetter(Movement::canJump),
+                Codec.BOOL.optionalFieldOf("can_climb", true).forGetter(Movement::canClimb),
+                Codec.BOOL.optionalFieldOf("can_fly", false).forGetter(Movement::canFly)
         ).apply(i, Movement::new));
     }
 
-    public record Combat(String type, double range, int cooldown,
+    public record Combat(String type, double range, int cooldown, double speed,
+                         double knockback, double accuracy, double meleeRange,
                          Optional<String> projectile, double projectileSpeed) {
         public static final Codec<Combat> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.optionalFieldOf("type", "none").forGetter(Combat::type),
                 Codec.DOUBLE.optionalFieldOf("range", 2.0).forGetter(Combat::range),
                 Codec.INT.optionalFieldOf("cooldown", 20).forGetter(Combat::cooldown),
+                Codec.DOUBLE.optionalFieldOf("speed", 1.2).forGetter(Combat::speed),
+                Codec.DOUBLE.optionalFieldOf("knockback", 0.0).forGetter(Combat::knockback),
+                Codec.DOUBLE.optionalFieldOf("accuracy", 90.0).forGetter(Combat::accuracy),
+                Codec.DOUBLE.optionalFieldOf("melee_range", 4.0).forGetter(Combat::meleeRange),
                 Codec.STRING.optionalFieldOf("projectile").forGetter(Combat::projectile),
                 Codec.DOUBLE.optionalFieldOf("projectile_speed", 1.6).forGetter(Combat::projectileSpeed)
         ).apply(i, Combat::new));
@@ -125,7 +139,10 @@ public record EntityDefinition(
             Loot.CODEC.optionalFieldOf("loot").forGetter(EntityDefinition::loot),
             Persistence.CODEC.optionalFieldOf("persistence").forGetter(EntityDefinition::persistence),
             StatDef.Rule.CODEC.listOf()
-                    .optionalFieldOf("rules", List.of()).forGetter(EntityDefinition::rules)
+                    .optionalFieldOf("rules", List.of()).forGetter(EntityDefinition::rules),
+            Codec.STRING.listOf()
+                    .optionalFieldOf("effect_immunities", List.of())
+                    .forGetter(EntityDefinition::effectImmunities)
     ).apply(i, EntityDefinition::new));
     // NOTE drift: REGISTRY.codec() — use the same accessor StatDef's CODEC
     // calls on the effect/condition registries.

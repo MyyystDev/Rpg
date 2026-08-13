@@ -1,0 +1,30 @@
+{
+  "display": {
+    "name": "Frozen",
+    "description": "Slowed by ice. At 5 stacks you are Stunned.",
+    "color": "#87D9FF"
+  },
+  "category": "harmful",
+  "tags": ["rpg:ice", "rpg:movement_impairing", "rpg:crowd_control"],
+  "duration": {
+    "default": 100
+  },
+  "stacking": {
+    "mode": "stacks",
+    "max_stacks": 5,
+    "refresh_duration": true
+  },
+  "attributes": [
+    {
+      "attribute": "minecraft:movement_speed",
+      "operation": "add_multiplied_total",
+      "value_per_stack": -0.05
+    }
+  ],
+  "events": {
+    "on_max_stacks": [
+      { "type": "myrpg_core:apply_rpg_effect", "effect": "mypack:stunned", "duration": 40 },
+      { "type": "myrpg_core:remove_rpg_effect", "effect": "mypack:frozen" }
+    ]
+  }
+}

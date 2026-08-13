@@ -1,0 +1,32 @@
+{
+  "display": {
+    "name": "Stunned",
+    "description": "Cannot move, jump, attack or use items.",
+    "color": "#FFD45C"
+  },
+  "category": "harmful",
+  "tags": ["rpg:crowd_control", "rpg:stun"],
+  "duration": {
+    "default": 40,
+    "maximum": 100
+  },
+  "stacking": {
+    "mode": "refresh"
+  },
+  "restrictions": {
+    "can_move": false,
+    "can_jump": false,
+    "can_attack": false,
+    "can_use_items": false
+  },
+  "events": {
+    "on_applied": [
+      {
+        "type": "myrpg_core:play_sound",
+        "sound": "minecraft:block.anvil.land",
+        "volume": 0.6,
+        "pitch": 1.6
+      }
+    ]
+  }
+}

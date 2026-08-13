@@ -17,6 +17,7 @@ import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
+import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
 
 /** Built-in AI goal providers. */
@@ -33,7 +34,12 @@ public final class AiGoals {
         ).apply(i, RandomWalk::new));
         @Override public MapCodec<? extends AiGoalDef> codec() { return CODEC; }
         @Override public Goal build(RpgEntity entity) {
-            return new RandomStrollGoal(entity, speed);
+            boolean avoidWater = entity.definition()
+                    .flatMap(com.myyyst.myrpg.entities.data.EntityDefinition::movement)
+                    .map(com.myyyst.myrpg.entities.data.EntityDefinition.Movement::avoidWater)
+                    .orElse(false);
+            return avoidWater ? new WaterAvoidingRandomStrollGoal(entity, speed)
+                    : new RandomStrollGoal(entity, speed);
         }
     }
 

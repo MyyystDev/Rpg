@@ -3,6 +3,7 @@ package com.myyyst.myrpg.core;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.core.editor.EditorNet;
+import com.myyyst.myrpg.core.effect.EffectManager;
 import com.myyyst.myrpg.core.event.RpgEvents;
 import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.stat.PlayerStatTicker;
@@ -11,6 +12,8 @@ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
+import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -19,6 +22,7 @@ import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.packs.PackType;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
 
 import java.util.concurrent.CompletableFuture;
@@ -64,9 +68,31 @@ public class MyRpgFabric implements ModInitializer {
                         new ReloadAdapter("conditions", CoreData.NAMED_CONDITIONS)
                 );
 
+        ResourceManagerHelper.get(PackType.SERVER_DATA)
+                .registerReloadListener(
+                        new ReloadAdapter("effects", CoreData.EFFECTS)
+                );
+
         ServerTickEvents.END_SERVER_TICK.register(
                 PlayerStatTicker::tick
         );
+
+        // Custom-effect restrictions: can_attack / can_use_items
+        AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
+            if (player instanceof ServerPlayer sp
+                    && EffectManager.isRestricted(sp, "attack")) {
+                return InteractionResult.FAIL;
+            }
+            return InteractionResult.PASS;
+        });
+
+        UseItemCallback.EVENT.register((player, world, hand) -> {
+            if (player instanceof ServerPlayer sp
+                    && EffectManager.isRestricted(sp, "use_items")) {
+                return InteractionResult.FAIL;
+            }
+            return InteractionResult.PASS;
+        });
 
         ServerPlayConnectionEvents.JOIN.register(
                 (handler, sender, server) -> {
@@ -82,6 +108,7 @@ public class MyRpgFabric implements ModInitializer {
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
             if (entity instanceof ServerPlayer player) {
+                EffectManager.onDeath(player);
                 RpgEvents.post(new RpgEvents.GameEvent(
                         RpgEvents.PLAYER_DEATH,
                         player,

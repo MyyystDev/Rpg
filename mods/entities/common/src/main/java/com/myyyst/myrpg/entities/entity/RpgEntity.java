@@ -2,12 +2,18 @@ package com.myyyst.myrpg.entities.entity;
 
 import com.myyyst.myrpg.core.action.RpgAction;
 import com.myyyst.myrpg.core.condition.RpgCondition;
+import com.myyyst.myrpg.core.data.EffectDefinition;
+import com.myyyst.myrpg.core.effect.EffectHolder;
+import com.myyyst.myrpg.core.effect.EffectImmune;
+import com.myyyst.myrpg.core.effect.EffectManager;
+import com.myyyst.myrpg.core.effect.EffectStore;
 import com.myyyst.myrpg.core.stat.StatEngine;
 import com.myyyst.myrpg.core.stat.StatHolder;
 import com.myyyst.myrpg.core.stat.StatStore;
 import com.myyyst.myrpg.entities.Constants;
 import com.myyyst.myrpg.entities.ai.AiGoalDef;
 import com.myyyst.myrpg.entities.ai.TargetDef;
+import com.myyyst.myrpg.entities.ai.goal.ConfiguredMeleeAttackGoal;
 import com.myyyst.myrpg.entities.data.EntitiesData;
 import com.myyyst.myrpg.entities.data.EntityDefinition;
 import com.myyyst.myrpg.entities.event.EntityEvents;
@@ -29,9 +35,11 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -39,7 +47,9 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
+import net.minecraft.world.entity.ai.control.FlyingMoveControl;
 import net.minecraft.world.entity.ai.goal.RangedAttackGoal;
+import net.minecraft.world.entity.ai.navigation.FlyingPathNavigation;
 import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.entity.monster.RangedAttackMob;
 import net.minecraft.world.entity.projectile.Projectile;
@@ -61,12 +71,17 @@ import org.jspecify.annotations.Nullable;
 import java.util.Optional;
 
 /** The one generic base entity. Everything else is data. */
-public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttackMob {
+public class RpgEntity extends PathfinderMob
+        implements StatHolder, EffectHolder, EffectImmune, RangedAttackMob {
 
     private final StatStore stats = new StatStore();
+    private final EffectStore rpgEffects = new EffectStore();
     @Nullable private Identifier definitionId;
     @Nullable private BlockPos guardAnchor;
     private boolean allowDespawn = false;
+    private boolean canClimb = true;
+    private float hitboxWidth;    // 0 = use the type default
+    private float hitboxHeight;
 
     private static final EntityDataAccessor<String> DATA_DEFINITION =
             SynchedEntityData.defineId(RpgEntity.class, EntityDataSerializers.STRING);
@@ -90,7 +105,8 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
     public static AttributeSupplier.Builder createAttributes() {
         return PathfinderMob.createMobAttributes()
                 .add(Attributes.ATTACK_DAMAGE, 2.0)
-                .add(Attributes.ATTACK_KNOCKBACK, 0.0);
+                .add(Attributes.ATTACK_KNOCKBACK, 0.0)
+                .add(Attributes.FLYING_SPEED, 0.4);   // required by FlyingMoveControl
     }
 
     // ------------------------------------------------------------ definition
@@ -159,6 +175,12 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
             if (instance != null) instance.setBaseValue(attrEntry.getValue());
         }
 
+        // melee knockback rides the attack_knockback attribute
+        def.combat().filter(c -> c.knockback() > 0).ifPresent(c -> {
+            AttributeInstance kb = getAttribute(Attributes.ATTACK_KNOCKBACK);
+            if (kb != null) kb.setBaseValue(c.knockback());
+        });
+
         // stat seeds
         for (var statEntry : def.stats().entrySet()) {
             stats.set(this, statEntry.getKey(), statEntry.getValue());
@@ -198,6 +220,13 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
         def.appearance().ifPresent(a -> {
             AttributeInstance scale = getAttribute(Attributes.SCALE);
             if (scale != null && a.scale() != 1.0) scale.setBaseValue(a.scale());
+
+            // explicit hitbox override (values <= 0 mean "model default")
+            this.hitboxWidth = a.hitboxWidth().filter(v -> v > 0).orElse(0.0).floatValue();
+            this.hitboxHeight = a.hitboxHeight().filter(v -> v > 0).orElse(0.0).floatValue();
+            refreshDimensions();
+
+            setGlowingTag(a.glow());
         });
 
         boolean canSwim = def.movement().map(EntityDefinition.Movement::canSwim).orElse(true);
@@ -207,6 +236,27 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
         }
 
         this.allowDespawn = def.persistence().map(EntityDefinition.Persistence::despawn).orElse(false);
+
+        // stationary entities keep AI (look, combat swings) but never walk
+        if (def.movement().map(EntityDefinition.Movement::type).orElse("ground").equals("stationary")) {
+            AttributeInstance speed = getAttribute(Attributes.MOVEMENT_SPEED);
+            if (speed != null) speed.setBaseValue(0.0);
+        }
+
+        // can_jump=false zeroes jump strength (pathing stops hopping ledges)
+        if (!def.movement().map(EntityDefinition.Movement::canJump).orElse(true)) {
+            AttributeInstance jump = getAttribute(Attributes.JUMP_STRENGTH);
+            if (jump != null) jump.setBaseValue(0.0);
+        }
+
+        // ladder climbing gate — see onClimbable
+        this.canClimb = def.movement().map(EntityDefinition.Movement::canClimb).orElse(true);
+
+        // can_fly swaps in flying controls (bee-style hover flight)
+        if (def.movement().map(EntityDefinition.Movement::canFly).orElse(false)) {
+            this.moveControl = new FlyingMoveControl(this, 20, true);
+            this.navigation = new FlyingPathNavigation(this, level());
+        }
 
         rebuildAi(def, canSwim);
     }
@@ -230,15 +280,21 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
         // combat: the configured style implies an attack goal even if the
         // ai list omits it
         String combatType = def.combat().map(EntityDefinition.Combat::type).orElse("none");
-        if (!hasMeleeGoal && "melee".equals(combatType)) {
-            goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.2, true));
+        boolean wantsMelee = "melee".equals(combatType) || "hybrid".equals(combatType);
+        boolean wantsRanged = "ranged".equals(combatType) || "hybrid".equals(combatType);
+        if (!hasMeleeGoal && wantsMelee) {
+            EntityDefinition.Combat combat = def.combat().orElseThrow();
+            // hybrid: melee only engages inside melee_range, and outranks the bow
+            double engageRange = "hybrid".equals(combatType) ? combat.meleeRange() : 0.0;
+            goalSelector.addGoal(2, new ConfiguredMeleeAttackGoal(
+                    this, combat.speed(), true, combat.cooldown(), engageRange));
         }
-        if (!hasRangedGoal && "ranged".equals(combatType)) {
+        if (!hasRangedGoal && wantsRanged) {
             EntityDefinition.Combat combat = def.combat().orElseThrow();
             // the record's range default (2.0) is a melee reach — useless for
             // ranged, so fall back to a sensible bow range
             float range = (float) (combat.range() > 2.0 ? combat.range() : 15.0);
-            goalSelector.addGoal(2, new RangedAttackGoal(this, 1.0,
+            goalSelector.addGoal(3, new RangedAttackGoal(this, combat.speed(),
                     Math.max(1, combat.cooldown()), range));
         }
 
@@ -274,6 +330,23 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
     @Override
     public StatStore rpgStats() { return stats; }
 
+    @Override
+    public EffectStore rpgEffects() { return rpgEffects; }
+
+    @Override
+    public boolean isEffectImmune(Identifier effectId, EffectDefinition effectDef) {
+        EntityDefinition def = definition().orElse(null);
+        if (def == null) return false;
+        for (String entry : def.effectImmunities()) {
+            if (entry.startsWith("#")) {
+                if (effectDef.hasTag(entry.substring(1))) return true;
+            } else if (entry.equals(effectId.toString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Nullable
     public BlockPos guardAnchor() { return guardAnchor; }
 
@@ -286,6 +359,9 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
         // deliberate perf asymmetry: entities with no touched stats skip the engine
         if (!stats.isEmpty()) {
             StatEngine.tick(stats, this);
+        }
+        if (!rpgEffects.isEmpty()) {
+            EffectManager.tick(rpgEffects, this);
         }
         definition().ifPresent(def -> EntityRuleEngine.tick(this, def));
     }
@@ -303,8 +379,12 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
         double speed = definition().flatMap(EntityDefinition::combat)
                 .map(EntityDefinition.Combat::projectileSpeed).orElse(1.6);
         if (level() instanceof ServerLevel serverLevel) {
+            // accuracy 100% = laser, 90% = skeleton-on-hard, lower = drunk
+            double accuracy = definition().flatMap(EntityDefinition::combat)
+                    .map(EntityDefinition.Combat::accuracy).orElse(90.0);
+            float inaccuracy = (float) Math.max(0.0, (100.0 - accuracy) / 5.0);
             Projectile.spawnProjectileUsingShoot(arrow, serverLevel, projectileStack,
-                    xd, yd + horizontal * 0.2, zd, (float) speed, 2.0f);
+                    xd, yd + horizontal * 0.2, zd, (float) speed, inaccuracy);
         }
         playSound(SoundEvents.SKELETON_SHOOT, 1.0f,
                 1.0f / (getRandom().nextFloat() * 0.4f + 0.8f));
@@ -379,6 +459,7 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
             output.store("myrpg_guard_pos", BlockPos.CODEC, guardAnchor);
         }
         stats.save(output, "myrpg_stats");
+        rpgEffects.save(output, "myrpg_effects");
     }
 
     @Override
@@ -393,6 +474,8 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
         stats.reapplyStages(this);          // effects re-applied, no enter/exit events
         // goals/targets are never serialized — rebuild them from the definition
         definition().ifPresent(this::applyRuntime);
+        rpgEffects.load(input, "myrpg_effects");
+        EffectManager.reapplyAll(this);     // modifiers only; no on_applied replay
         // NO setHealth — a loaded entity keeps its wounds.
     }
 
@@ -401,6 +484,20 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
     @Override
     public boolean removeWhenFarAway(double distance) {
         return allowDespawn;
+    }
+
+    @Override
+    public boolean onClimbable() {
+        return canClimb && super.onClimbable();
+    }
+
+    @Override
+    protected EntityDimensions getDefaultDimensions(Pose pose) {
+        EntityDimensions base = super.getDefaultDimensions(pose);
+        if (hitboxWidth <= 0 && hitboxHeight <= 0) return base;
+        return EntityDimensions.scalable(
+                hitboxWidth > 0 ? hitboxWidth : base.width(),
+                hitboxHeight > 0 ? hitboxHeight : base.height());
     }
 
     @Override

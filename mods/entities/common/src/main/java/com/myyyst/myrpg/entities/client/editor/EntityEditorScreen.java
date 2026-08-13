@@ -49,7 +49,8 @@ public class EntityEditorScreen extends Screen {
     private static final String[] MODELS = {
             "myrpg_entities:humanoid", "myrpg_entities:humanoid_slim",
             "myrpg_entities:zombie", "myrpg_entities:skeleton"};
-    private static final String[] COMBAT_TYPES = {"none", "melee", "ranged"};
+    private static final String[] COMBAT_TYPES = {"none", "melee", "ranged", "hybrid"};
+    private static final String[] MOVEMENT_TYPES = {"ground", "stationary"};
 
     private enum Page {GENERAL, APPEARANCE, ATTRIBUTES, MOVEMENT, COMBAT, EQUIPMENT, AI, DROPS, ADVANCED}
 
@@ -73,6 +74,8 @@ public class EntityEditorScreen extends Screen {
     private int attrScroll;
     private boolean attrPicking;
     private int attrPickScroll;
+    private EditBox attrSearchBox;
+    private String lastAttrQuery = "";
 
     public EntityEditorScreen(EntityBrowserScreen parent, EntityWorkingSet.Entry entry) {
         super(Component.literal("Entity Editor"));
@@ -113,6 +116,11 @@ public class EntityEditorScreen extends Screen {
         wellH = frameBottom - frameTop - 16;
 
         buildPageWidgets();
+        if (attrPicking) {
+            String keep = lastAttrQuery;
+            openAttrPicker();
+            attrSearchBox.setValue(keep);
+        }
     }
 
     private void setPage(Page newPage) {
@@ -136,8 +144,10 @@ public class EntityEditorScreen extends Screen {
             }
             case ADVANCED -> addTagsField(wellX + 8, wellY + 14, wellW - 16);
             case APPEARANCE -> {
-                addFieldAt("appearance.texture", "", wellX + 8, wellY + 54, wellW - 16);
-                addNumberField("appearance.scale", 1.0, wellX + 8, wellY + 94, 64);
+                addNumberField("appearance.scale", 1.0, wellX + 168, wellY + 14, 64);
+                addFieldAt("appearance.texture", "", wellX + 8, wellY + 56, wellW - 16);
+                addNumberField("appearance.hitbox_width", 0, wellX + 8, wellY + 108, 64);
+                addNumberField("appearance.hitbox_height", 0, wellX + 88, wellY + 108, 64);
             }
             case ATTRIBUTES -> {
                 java.util.List<String> keys = attributeKeys();
@@ -146,20 +156,36 @@ public class EntityEditorScreen extends Screen {
                     int idx = attrScroll + r;
                     if (idx >= keys.size()) break;
                     addNumberField("attributes." + keys.get(idx), 0,
-                            wellX + 20, attrRowY(r) + 17, 72);
+                            wellX + 20, attrRowY(r) + 19, 72);
                 }
             }
             case COMBAT -> {
                 String type = JsonEdit.getString(entry.json, "combat.type", "none");
-                if (!type.equals("none")) {
-                    addNumberField("combat.range", type.equals("ranged") ? 15 : 2.0,
-                            wellX + 8, wellY + 54, 64);
-                    addNumberField("combat.cooldown", type.equals("ranged") ? 30 : 20,
-                            wellX + half + 8, wellY + 54, 64);
-                }
-                if (type.equals("ranged")) {
-                    addFieldAt("combat.projectile", "minecraft:arrow", wellX + 8, wellY + 94, half - 16);
-                    addNumberField("combat.projectile_speed", 1.6, wellX + half + 8, wellY + 94, 64);
+                int lx = wellX + 8, rx2 = wellX + half + 8;
+                switch (type) {
+                    case "melee" -> {
+                        addNumberField("combat.speed", 1.2, lx, combatRowY(type, 0), 64);
+                        addNumberField("combat.cooldown", 20, rx2, combatRowY(type, 0), 64);
+                        addNumberField("combat.knockback", 0, lx, combatRowY(type, 1), 64);
+                    }
+                    case "ranged" -> {
+                        addNumberField("combat.range", 15, lx, combatRowY(type, 0), 64);
+                        addNumberField("combat.cooldown", 30, rx2, combatRowY(type, 0), 64);
+                        addFieldAt("combat.projectile", "minecraft:arrow", lx, combatRowY(type, 1), half - 16);
+                        addNumberField("combat.projectile_speed", 1.6, rx2, combatRowY(type, 1), 64);
+                        addNumberField("combat.accuracy", 90, lx, combatRowY(type, 2), 64);
+                    }
+                    case "hybrid" -> {
+                        addNumberField("combat.speed", 1.2, lx, combatRowY(type, 0), 64);
+                        addNumberField("combat.cooldown", 20, rx2, combatRowY(type, 0), 64);
+                        addNumberField("combat.melee_range", 4, lx, combatRowY(type, 1), 64);
+                        addNumberField("combat.knockback", 0, rx2, combatRowY(type, 1), 64);
+                        addFieldAt("combat.projectile", "minecraft:arrow", lx, combatRowY(type, 2), half - 16);
+                        addNumberField("combat.projectile_speed", 1.6, rx2, combatRowY(type, 2), 64);
+                        addNumberField("combat.range", 15, lx, combatRowY(type, 3), 64);
+                        addNumberField("combat.accuracy", 90, rx2, combatRowY(type, 3), 64);
+                    }
+                    default -> { }
                 }
             }
             case EQUIPMENT -> {
@@ -283,10 +309,11 @@ public class EntityEditorScreen extends Screen {
 
         renderPreview(g, mouseX, mouseY);
 
-        super.extractRenderState(g, mouseX, mouseY, delta);
+        if (attrPicking) renderAttrPicker(g, mouseX, mouseY);
+
+        super.extractRenderState(g, mouseX, mouseY, delta);   // widgets draw here
 
         if (addPicking) renderAddPicker(g, mouseX, mouseY);
-        if (attrPicking) renderAttrPicker(g, mouseX, mouseY);
     }
 
     private void renderPreview(GuiGraphicsExtractor g, int mouseX, int mouseY) {
@@ -447,7 +474,7 @@ public class EntityEditorScreen extends Screen {
 
     // ---------------------------------------------------------- attributes page
 
-    private static final int ATTR_ROW = 42;
+    private static final int ATTR_ROW = 46;
     private static final int[] ATTR_COLORS = {
             PanelStyle.ERROR, 0xFF5B9BD5, PanelStyle.EDITED,
             0xFF57B3A0, PanelStyle.VALID, PanelStyle.ACCENT};
@@ -487,6 +514,48 @@ public class EntityEditorScreen extends Screen {
                     if (ma != mb) return ma ? -1 : 1;
                     return a.toString().compareTo(b.toString());
                 })
+                .toList();
+    }
+
+    // picker layout (shared by render + input)
+    private int pickerW() { return Math.min(320, pw - 40); }
+    /** Visible picker rows adapt to the screen so the panel always fits. */
+    private int pickerRows() {
+        return Math.max(4, Math.min(14, (height - 124) / 14));
+    }
+    private int pickerH() { return 56 + pickerRows() * 14 + 8 + 8; }
+    private int pickerX() { return (width - pickerW()) / 2; }
+    private int pickerY() { return (height - pickerH()) / 2; }
+    private int pickerListY() { return pickerY() + 52; }
+
+    private void openAttrPicker() {
+        attrPicking = true;
+        attrPickScroll = 0;
+        lastAttrQuery = "";
+        clearWidgets();
+        attrSearchBox = new EditBox(font, pickerX() + 8, pickerY() + 26,
+                pickerW() - 16, 18, Component.literal("Search"));
+        attrSearchBox.setHint(Component.literal("Search attributes..."));
+        addRenderableWidget(attrSearchBox);
+        setFocused(attrSearchBox);
+    }
+
+    private void closeAttrPicker() {
+        attrPicking = false;
+        attrSearchBox = null;
+        setPageKeepAttr();
+    }
+
+    private String attrQuery() {
+        return attrSearchBox == null ? "" : attrSearchBox.getValue().trim();
+    }
+
+    private java.util.List<Identifier> filteredMissingAttributes() {
+        String query = attrQuery().toLowerCase();
+        return missingAttributes().stream()
+                .filter(id -> query.isEmpty()
+                        || id.toString().contains(query)
+                        || prettyAttribute(id.toString()).toLowerCase().contains(query))
                 .toList();
     }
 
@@ -630,23 +699,31 @@ public class EntityEditorScreen extends Screen {
         String shortName = model.contains(":") ? model.split(":", 2)[1] : model;
         PanelStyle.button(g, font, shortName.toUpperCase(), wellX + 8, wellY + 14, 140,
                 PanelStyle.hit(mouseX, mouseY, wellX + 8, wellY + 14, 140, PanelStyle.CONTROL_H), false);
+        g.text(font, Component.literal("SCALE"), wellX + 168, wellY + 4, PanelStyle.TEXT_DIM);
+
         g.text(font, Component.literal("TEXTURE (blank = model default)"),
-                wellX + 8, wellY + 44, PanelStyle.TEXT_DIM);
-        g.text(font, Component.literal("SCALE"), wellX + 8, wellY + 84, PanelStyle.TEXT_DIM);
-        g.text(font, Component.literal("Scale also grows the hitbox (vanilla scale attribute)."),
-                wellX + 88, wellY + 99, PanelStyle.TEXT_DIM);
+                wellX + 8, wellY + 46, PanelStyle.TEXT_DIM);
+
+        g.text(font, Component.literal("HITBOX (0 = model default)"),
+                wellX + 8, wellY + 86, PanelStyle.TEXT_DIM);
+        g.text(font, Component.literal("WIDTH"), wellX + 8, wellY + 98, PanelStyle.TEXT_DIM);
+        g.text(font, Component.literal("HEIGHT"), wellX + 88, wellY + 98, PanelStyle.TEXT_DIM);
+
+        boolean glow = JsonEdit.getBool(entry.json, "appearance.glow", false);
+        renderCheckbox(g, mouseX, mouseY, "Glow outline", glow, wellX + 8, wellY + 140);
     }
 
     private void renderAttributes(GuiGraphicsExtractor g, int mouseX, int mouseY) {
-        g.text(font, Component.literal("ATTRIBUTES"), wellX + 8, wellY + 6, PanelStyle.TEXT_DIM);
         int addW = 104;
-        PanelStyle.button(g, font, "+ ADD ATTRIBUTE", wellX + wellW - addW - 8, wellY, addW,
-                PanelStyle.hit(mouseX, mouseY, wellX + wellW - addW - 8, wellY, addW, PanelStyle.CONTROL_H), true);
+        PanelStyle.button(g, font, "+ ADD ATTRIBUTE", wellX + 8, wellY, addW,
+                PanelStyle.hit(mouseX, mouseY, wellX + 8, wellY, addW, PanelStyle.CONTROL_H), true);
 
         java.util.List<String> keys = attributeKeys();
         if (keys.isEmpty()) {
-            g.text(font, Component.literal("No attributes set — base defaults apply."),
-                    wellX + 8, wellY + 40, PanelStyle.TEXT_DIM);
+            String l1 = font.plainSubstrByWidth("No attributes set.", wellW - 16);
+            String l2 = font.plainSubstrByWidth("The entity keeps its base defaults.", wellW - 16);
+            g.text(font, Component.literal(l1), wellX + 8, wellY + 40, PanelStyle.TEXT_DIM);
+            g.text(font, Component.literal(l2), wellX + 8, wellY + 52, PanelStyle.TEXT_DIM);
             return;
         }
         int rows = attrRowsVisible();
@@ -674,8 +751,8 @@ public class EntityEditorScreen extends Screen {
             if (font.width(label) > rw - 40) label = font.plainSubstrByWidth(label, rw - 48) + "…";
             g.text(font, Component.literal(label), wellX + 20, ry + 6, PanelStyle.TEXT);
             // line 2 holds the value EditBox (widget); X sits top-right
-            boolean xHover = PanelStyle.hit(mouseX, mouseY, rx + rw - 26, ry + 4, 14, 14);
-            g.text(font, Component.literal("X"), rx + rw - 22, ry + 6,
+            boolean xHover = PanelStyle.hit(mouseX, mouseY, rx + rw - 17, ry + 3, 14, 14);
+            g.text(font, Component.literal("X"), rx + rw - 13, ry + 5,
                     xHover ? PanelStyle.ERROR : PanelStyle.TEXT_DIM);
         }
         PanelStyle.scrollbar(g, wellX + wellW - 4, wellY + 30, wellH - 34,
@@ -683,51 +760,122 @@ public class EntityEditorScreen extends Screen {
     }
 
     private void renderAttrPicker(GuiGraphicsExtractor g, int mouseX, int mouseY) {
-        java.util.List<Identifier> missing = missingAttributes();
-        int w = 220, maxRows = 10;
-        int shown = Math.min(missing.size(), maxRows);
-        int h = 30 + Math.max(1, shown) * 14 + 8;
-        int cx = (width - w) / 2, cy = (height - h) / 2;
+        java.util.List<Identifier> filtered = filteredMissingAttributes();
+        int w = pickerW(), cx = pickerX(), cy = pickerY(), h = pickerH();
         g.fill(0, 0, width, height, PanelStyle.SCREEN_DIM);
         PanelStyle.panel(g, cx, cy, w, h);
         g.text(font, Component.literal("ADD ATTRIBUTE"), cx + 8, cy + 8, PanelStyle.TEXT);
-        for (int i = 0; i < shown; i++) {
+        g.text(font, Component.literal(filtered.size() + " AVAILABLE"),
+                cx + w - 8 - font.width(filtered.size() + " AVAILABLE"), cy + 8, PanelStyle.TEXT_DIM);
+
+        int listY = pickerListY();
+        // the list lives in its own sunken frame
+        PanelStyle.inset(g, cx + 6, listY - 4, w - 12, pickerRows() * 14 + 8);
+        for (int i = 0; i < pickerRows(); i++) {
             int idx = attrPickScroll + i;
-            if (idx >= missing.size()) break;
-            int iy = cy + 26 + i * 14;
-            boolean hovered = PanelStyle.hit(mouseX, mouseY, cx + 4, iy, w - 8, 14);
-            if (hovered) g.fill(cx + 4, iy, cx + w - 4, iy + 14, PanelStyle.ROW_HOVER);
-            g.text(font, Component.literal(missing.get(idx).toString()), cx + 10, iy + 3,
+            if (idx >= filtered.size()) break;
+            int iy = listY + i * 14;
+            boolean hovered = PanelStyle.hit(mouseX, mouseY, cx + 8, iy, w - 16, 14);
+            if (hovered) g.fill(cx + 8, iy, cx + w - 8, iy + 14, PanelStyle.ROW_HOVER);
+            Identifier id = filtered.get(idx);
+            String name = prettyAttribute(id.toString());
+            g.text(font, Component.literal(name), cx + 14, iy + 3,
                     hovered ? PanelStyle.TEXT : PanelStyle.TEXT_DIM);
         }
-        PanelStyle.scrollbar(g, cx + w - 8, cy + 26, shown * 14,
-                missing.size(), maxRows, attrPickScroll);
+        if (filtered.isEmpty()) {
+            g.text(font, Component.literal("No matches"), cx + 14, listY + 3, PanelStyle.TEXT_DIM);
+        }
+        PanelStyle.scrollbar(g, cx + w - 12, listY - 2, pickerRows() * 14 + 4,
+                filtered.size(), pickerRows(), attrPickScroll);
+
     }
 
     private void renderMovement(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        g.text(font, Component.literal("MOVEMENT TYPE"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
+        String type = JsonEdit.getString(entry.json, "movement.type", "ground");
+        PanelStyle.button(g, font, type.toUpperCase(), wellX + 8, wellY + 14, 120,
+                PanelStyle.hit(mouseX, mouseY, wellX + 8, wellY + 14, 120, PanelStyle.CONTROL_H), false);
+
+        g.text(font, Component.literal("CAPABILITIES"), wellX + 8, wellY + 48, PanelStyle.TEXT_DIM);
         boolean swim = JsonEdit.getBool(entry.json, "movement.can_swim", true);
-        renderCheckbox(g, mouseX, mouseY, "Can swim (float in water)", swim, wellX + 8, wellY + 14);
+        renderCheckbox(g, mouseX, mouseY, "Can swim (float in water)", swim, wellX + 8, wellY + 60);
         boolean doors = JsonEdit.getBool(entry.json, "movement.can_open_doors", false);
-        renderCheckbox(g, mouseX, mouseY, "Can open doors", doors, wellX + 8, wellY + 34);
+        renderCheckbox(g, mouseX, mouseY, "Can open doors", doors, wellX + 8, wellY + 76);
+        boolean avoidWater = JsonEdit.getBool(entry.json, "movement.avoid_water", false);
+        renderCheckbox(g, mouseX, mouseY, "Avoid water when wandering", avoidWater, wellX + 8, wellY + 92);
+        boolean jump = JsonEdit.getBool(entry.json, "movement.can_jump", true);
+        renderCheckbox(g, mouseX, mouseY, "Can jump", jump, wellX + 8, wellY + 108);
+        boolean climb = JsonEdit.getBool(entry.json, "movement.can_climb", true);
+        renderCheckbox(g, mouseX, mouseY, "Can climb ladders", climb, wellX + 8, wellY + 124);
+        boolean fly = JsonEdit.getBool(entry.json, "movement.can_fly", false);
+        renderCheckbox(g, mouseX, mouseY, "Can fly (hovering flight)", fly, wellX + 8, wellY + 140);
+    }
+
+    // combat page geometry — adapts to well size so nothing overflows
+    private int combatButtonW() {
+        return (wellW - 16 - (COMBAT_TYPES.length - 1) * 4) / COMBAT_TYPES.length;
+    }
+    private int combatButtonX(int i) {
+        return wellX + 8 + i * (combatButtonW() + 4);
+    }
+    private int combatRowCount(String type) {
+        return switch (type) {
+            case "melee" -> 2;
+            case "ranged" -> 3;
+            case "hybrid" -> 4;
+            default -> 0;
+        };
+    }
+    private int combatRowStep(String type) {
+        int n = combatRowCount(type);
+        return n == 0 ? 40 : Math.max(30, Math.min(40, (wellH - 56) / n));
+    }
+    private int combatRowY(String type, int i) {
+        return wellY + 46 + i * combatRowStep(type);
+    }
+    private void combatLabel(GuiGraphicsExtractor g, String text, int x, int y) {
+        int max = wellW / 2 - 20;
+        if (font.width(text) > max) text = font.plainSubstrByWidth(text, max);
+        g.text(font, Component.literal(text), x, y, PanelStyle.TEXT_DIM);
     }
 
     private void renderCombat(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int half = wellW / 2;
-        g.text(font, Component.literal("TYPE"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
+        g.text(font, Component.literal("COMBAT TYPE"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
         String type = JsonEdit.getString(entry.json, "combat.type", "none");
-        PanelStyle.button(g, font, type.toUpperCase(), wellX + 8, wellY + 14, 100,
-                PanelStyle.hit(mouseX, mouseY, wellX + 8, wellY + 14, 100, PanelStyle.CONTROL_H), false);
-        if (!type.equals("none")) {
-            g.text(font, Component.literal("RANGE"), wellX + 8, wellY + 44, PanelStyle.TEXT_DIM);
-            g.text(font, Component.literal("COOLDOWN (ticks)"), wellX + half + 8, wellY + 44, PanelStyle.TEXT_DIM);
+        int bw = combatButtonW();
+        for (int i = 0; i < COMBAT_TYPES.length; i++) {
+            PanelStyle.button(g, font, COMBAT_TYPES[i].toUpperCase(), combatButtonX(i), wellY + 14, bw,
+                    PanelStyle.hit(mouseX, mouseY, combatButtonX(i), wellY + 14, bw, PanelStyle.CONTROL_H),
+                    COMBAT_TYPES[i].equals(type));
         }
-        if (type.equals("ranged")) {
-            g.text(font, Component.literal("PROJECTILE"), wellX + 8, wellY + 84, PanelStyle.TEXT_DIM);
-            g.text(font, Component.literal("PROJECTILE SPEED"), wellX + half + 8, wellY + 84, PanelStyle.TEXT_DIM);
-        }
-        if (type.equals("none")) {
-            g.text(font, Component.literal("No combat — this entity never auto-attacks."),
-                    wellX + 8, wellY + 48, PanelStyle.TEXT_DIM);
+
+        int lx = wellX + 8, rx2 = wellX + half + 8;
+        switch (type) {
+            case "melee" -> {
+                combatLabel(g, "CHASE SPEED", lx, combatRowY(type, 0) - 10);
+                combatLabel(g, "COOLDOWN (ticks)", rx2, combatRowY(type, 0) - 10);
+                combatLabel(g, "KNOCKBACK", lx, combatRowY(type, 1) - 10);
+            }
+            case "ranged" -> {
+                combatLabel(g, "RANGE", lx, combatRowY(type, 0) - 10);
+                combatLabel(g, "COOLDOWN (ticks)", rx2, combatRowY(type, 0) - 10);
+                combatLabel(g, "PROJECTILE", lx, combatRowY(type, 1) - 10);
+                combatLabel(g, "PROJ. SPEED", rx2, combatRowY(type, 1) - 10);
+                combatLabel(g, "ACCURACY (%)", lx, combatRowY(type, 2) - 10);
+            }
+            case "hybrid" -> {
+                combatLabel(g, "CHASE SPEED", lx, combatRowY(type, 0) - 10);
+                combatLabel(g, "COOLDOWN (ticks)", rx2, combatRowY(type, 0) - 10);
+                combatLabel(g, "SWITCH RANGE", lx, combatRowY(type, 1) - 10);
+                combatLabel(g, "KNOCKBACK", rx2, combatRowY(type, 1) - 10);
+                combatLabel(g, "PROJECTILE", lx, combatRowY(type, 2) - 10);
+                combatLabel(g, "PROJ. SPEED", rx2, combatRowY(type, 2) - 10);
+                combatLabel(g, "BOW RANGE", lx, combatRowY(type, 3) - 10);
+                combatLabel(g, "ACCURACY (%)", rx2, combatRowY(type, 3) - 10);
+            }
+            default -> g.text(font, Component.literal("No combat — this entity never auto-attacks."),
+                    wellX + 8, wellY + 50, PanelStyle.TEXT_DIM);
         }
     }
 
@@ -752,20 +900,127 @@ public class EntityEditorScreen extends Screen {
                 wellX + 8, wellY + 134, PanelStyle.TEXT_DIM);
     }
 
-    private void renderAi(GuiGraphicsExtractor g, int mouseX, int mouseY) {
-        g.text(font, Component.literal("AI GOALS"), wellX + 8, wellY + 4, PanelStyle.TEXT);
-        PanelStyle.button(g, font, "EDIT GOALS", wellX + wellW - 96, wellY, 88,
-                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 96, wellY, 88, PanelStyle.CONTROL_H), true);
-        int y = wellY + 28;
-        y = renderGoalList(g, entry.json, "ai", y);
-        g.text(font, Component.literal("TARGETING"), wellX + 8, y + 10, PanelStyle.TEXT);
-        PanelStyle.button(g, font, "EDIT TARGETING", wellX + wellW - 108, y + 4, 100,
-                PanelStyle.hit(mouseX, mouseY, wellX + wellW - 108, y + 4, 100, PanelStyle.CONTROL_H), true);
-        targetingButtonY = y + 4;
-        renderGoalList(g, entry.json, "targeting", y + 32);
+    // ---------------------------------------------------------- AI page (design book 12)
+
+    /** One visual row: an AI goal, the TARGETING header, or a target rule. */
+    private record AiRow(String kind, int arrayIndex, @org.jspecify.annotations.Nullable JsonObject obj) {}
+
+    private static final int AI_ROW = 24;
+
+    private JsonArray aiArray(String key) {
+        return entry.json.has(key) && entry.json.get(key).isJsonArray()
+                ? entry.json.getAsJsonArray(key) : new JsonArray();
     }
 
-    private int targetingButtonY = -1;
+    private java.util.List<AiRow> aiRows() {
+        java.util.List<AiRow> rows = new java.util.ArrayList<>();
+        for (String kind : new String[]{"goal", "target"}) {
+            if (kind.equals("target")) rows.add(new AiRow("theader", -1, null));
+            JsonArray array = aiArray(kind.equals("goal") ? "ai" : "targeting");
+            java.util.List<Integer> order = new java.util.ArrayList<>();
+            for (int i = 0; i < array.size(); i++) if (array.get(i).isJsonObject()) order.add(i);
+            order.sort(java.util.Comparator.comparingInt(i -> {
+                JsonObject o = array.get(i).getAsJsonObject();
+                return o.has("priority") ? o.get("priority").getAsInt() : 5;
+            }));
+            for (int i : order) rows.add(new AiRow(kind, i, array.get(i).getAsJsonObject()));
+        }
+        return rows;
+    }
+
+    private static String aiTypeId(JsonObject obj) {
+        return obj.has("type") ? obj.get("type").getAsString() : "?";
+    }
+
+    private String aiRowLabel(AiRow row) {
+        var schema = row.kind().equals("goal")
+                ? GoalSchemas.goals().get(aiTypeId(row.obj()))
+                : GoalSchemas.targets().get(aiTypeId(row.obj()));
+        if (schema != null) return schema.label().toUpperCase();
+        String type = aiTypeId(row.obj());
+        return (type.contains(":") ? type.split(":", 2)[1] : type).replace('_', ' ').toUpperCase();
+    }
+
+    private String aiRowSummary(AiRow row) {
+        StringBuilder sb = new StringBuilder();
+        for (var e : row.obj().entrySet()) {
+            if (e.getKey().equals("type") || e.getKey().equals("priority")) continue;
+            if (!sb.isEmpty()) sb.append("  ");
+            sb.append(e.getKey().replace('_', ' ')).append(' ').append(e.getValue().getAsString());
+        }
+        return sb.toString();
+    }
+
+    private int aiVisibleRows() {
+        return Math.max(1, (wellH - 34) / AI_ROW);
+    }
+
+    private void renderAi(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        g.text(font, Component.literal("AI GOALS"), wellX + 8, wellY + 6, PanelStyle.TEXT_DIM);
+        int addW = 72;
+        PanelStyle.button(g, font, "+ ADD GOAL", wellX + wellW - addW - 8, wellY, addW,
+                PanelStyle.hit(mouseX, mouseY, wellX + wellW - addW - 8, wellY, addW, PanelStyle.CONTROL_H), true);
+
+        java.util.List<AiRow> rows = aiRows();
+        int visible = aiVisibleRows();
+        listScroll = Math.max(0, Math.min(listScroll, Math.max(0, rows.size() - visible)));
+        for (int r = 0; r < visible; r++) {
+            int idx = listScroll + r;
+            if (idx >= rows.size()) break;
+            AiRow row = rows.get(idx);
+            int ry = wellY + 30 + r * AI_ROW;
+            int rx = wellX + 8;
+            int rw = wellW - 16;
+
+            if (row.kind().equals("theader")) {
+                g.text(font, Component.literal("TARGETING"), rx, ry + 8, PanelStyle.TEXT_DIM);
+                int tw = 80;
+                PanelStyle.button(g, font, "+ ADD RULE", rx + rw - tw, ry + 1, tw,
+                        PanelStyle.hit(mouseX, mouseY, rx + rw - tw, ry + 1, tw, 22), true);
+                continue;
+            }
+
+            boolean hovered = PanelStyle.hit(mouseX, mouseY, rx, ry, rw, AI_ROW - 3);
+            g.fill(rx, ry, rx + rw, ry + AI_ROW - 3, hovered ? PanelStyle.ROW_HOVER : PanelStyle.ROW_BG);
+            g.fill(rx, ry, rx + 3, ry + AI_ROW - 3, row.kind().equals("goal")
+                    ? PanelStyle.ACCENT : PanelStyle.EDITED);
+
+            int priority = row.obj().has("priority") ? row.obj().get("priority").getAsInt() : 5;
+            g.fill(rx + 7, ry + 4, rx + 23, ry + AI_ROW - 7, PanelStyle.INSET_BG);
+            String ps = String.valueOf(priority);
+            g.text(font, Component.literal(ps), rx + 15 - font.width(ps) / 2, ry + 7, PanelStyle.TEXT_DIM);
+
+            String label = aiRowLabel(row);
+            g.text(font, Component.literal(label), rx + 30, ry + 7, PanelStyle.TEXT);
+
+            boolean known = (row.kind().equals("goal")
+                    ? GoalSchemas.goals() : GoalSchemas.targets()).containsKey(aiTypeId(row.obj()));
+            String summary = known ? aiRowSummary(row) : "(addon type)";
+            int summaryX = rx + 30 + font.width(label) + 8;
+            int summaryMax = rx + rw - 58 - summaryX;
+            if (summaryMax > 20 && !summary.isEmpty()) {
+                if (font.width(summary) > summaryMax) {
+                    summary = font.plainSubstrByWidth(summary, summaryMax - 6) + "…";
+                }
+                g.text(font, Component.literal(summary), summaryX, ry + 7, PanelStyle.TEXT_DIM);
+            }
+
+            if (known) {
+                boolean editHover = PanelStyle.hit(mouseX, mouseY, rx + rw - 52, ry + 4, 32, 16);
+                g.text(font, Component.literal("EDIT"), rx + rw - 50, ry + 7,
+                        editHover ? PanelStyle.TEXT : PanelStyle.TEXT_DIM);
+            }
+            boolean xHover = PanelStyle.hit(mouseX, mouseY, rx + rw - 16, ry + 4, 12, 16);
+            g.text(font, Component.literal("X"), rx + rw - 13, ry + 7,
+                    xHover ? PanelStyle.ERROR : PanelStyle.TEXT_DIM);
+        }
+        if (rows.size() <= 1) {
+            g.text(font, Component.literal("No goals — the entity stands idle."),
+                    wellX + 8, wellY + 34, PanelStyle.TEXT_DIM);
+        }
+        PanelStyle.scrollbar(g, wellX + wellW - 4, wellY + 30, wellH - 34,
+                rows.size(), visible, listScroll);
+    }
 
     private com.google.gson.JsonArray arr(String key) {
         if (!entry.json.has(key) || !entry.json.get(key).isJsonArray()) {
@@ -866,6 +1121,52 @@ public class EntityEditorScreen extends Screen {
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x(), my = event.y();
+
+        // overlays get first claim on every click
+        // attribute picker eats all clicks while open
+        if (attrPicking) {
+            int w = pickerW(), cx = pickerX(), cy = pickerY(), h = pickerH();
+            // clicks on the search box go to the widget
+            if (attrSearchBox != null && PanelStyle.hit(mx, my,
+                    cx + 8, cy + 26, w - 16, 18)) {
+                return super.mouseClicked(event, doubleClick);
+            }
+            java.util.List<Identifier> filtered = filteredMissingAttributes();
+            int listY = pickerListY();
+            for (int i = 0; i < pickerRows(); i++) {
+                int idx = attrPickScroll + i;
+                if (idx >= filtered.size()) break;
+                int iy = listY + i * 14;
+                if (PanelStyle.hit(mx, my, cx + 8, iy, w - 16, 14)) {
+                    Identifier picked = filtered.get(idx);
+                    closeAttrPicker();
+                    addAttribute(picked);
+                    return true;
+                }
+            }
+            if (!PanelStyle.hit(mx, my, cx, cy, w, h)) {
+                closeAttrPicker();   // click outside closes; inside panel keeps typing
+            }
+            return true;
+        }
+
+        // add-component picker eats all clicks while open
+        if (addPicking) {
+            java.util.List<Page> missing = missingPages();
+            int w = 160, h = 30 + Math.max(1, missing.size()) * 18 + 8;
+            int cx = (width - w) / 2, cy = (height - h) / 2;
+            for (int i = 0; i < missing.size(); i++) {
+                int iy = cy + 26 + i * 18;
+                if (PanelStyle.hit(mx, my, cx + 4, iy, w - 8, 18)) {
+                    addPicking = false;
+                    addComponent(missing.get(i));
+                    return true;
+                }
+            }
+            addPicking = false;   // click anywhere else closes
+            return true;
+        }
+
         int hy = py + PanelStyle.GRID;
 
         if (PanelStyle.hit(mx, my, px + PanelStyle.GRID, hy, 20, PanelStyle.CONTROL_H)) {
@@ -895,44 +1196,6 @@ public class EntityEditorScreen extends Screen {
                 draggingYaw = true;
                 setYawFromMouse(mx);
             }
-            return true;
-        }
-
-        // attribute picker eats all clicks while open
-        if (attrPicking) {
-            java.util.List<Identifier> missing = missingAttributes();
-            int w = 220, maxRows = 10;
-            int shown = Math.min(missing.size(), maxRows);
-            int h = 30 + Math.max(1, shown) * 14 + 8;
-            int cx = (width - w) / 2, cy = (height - h) / 2;
-            for (int i = 0; i < shown; i++) {
-                int idx = attrPickScroll + i;
-                if (idx >= missing.size()) break;
-                int iy = cy + 26 + i * 14;
-                if (PanelStyle.hit(mx, my, cx + 4, iy, w - 8, 14)) {
-                    attrPicking = false;
-                    addAttribute(missing.get(idx));
-                    return true;
-                }
-            }
-            attrPicking = false;
-            return true;
-        }
-
-        // add-component picker eats all clicks while open
-        if (addPicking) {
-            java.util.List<Page> missing = missingPages();
-            int w = 160, h = 30 + Math.max(1, missing.size()) * 18 + 8;
-            int cx = (width - w) / 2, cy = (height - h) / 2;
-            for (int i = 0; i < missing.size(); i++) {
-                int iy = cy + 26 + i * 18;
-                if (PanelStyle.hit(mx, my, cx + 4, iy, w - 8, 18)) {
-                    addPicking = false;
-                    addComponent(missing.get(i));
-                    return true;
-                }
-            }
-            addPicking = false;   // click anywhere else closes
             return true;
         }
 
@@ -972,41 +1235,101 @@ public class EntityEditorScreen extends Screen {
                     entry.dirty = true;
                     return true;
                 }
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 140, 160, 12)) {
+                    toggleBool("appearance.glow", false);
+                    return true;
+                }
             }
             case MOVEMENT -> {
-                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 14, 180, 12)) {
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 14, 120, PanelStyle.CONTROL_H)) {
+                    String type = JsonEdit.getString(entry.json, "movement.type", "ground");
+                    int i = 0;
+                    for (int t = 0; t < MOVEMENT_TYPES.length; t++) if (MOVEMENT_TYPES[t].equals(type)) i = t;
+                    JsonEdit.set(entry.json, "movement.type", MOVEMENT_TYPES[(i + 1) % MOVEMENT_TYPES.length]);
+                    entry.dirty = true;
+                    return true;
+                }
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 60, 180, 12)) {
                     toggleBool("movement.can_swim", true);
                     return true;
                 }
-                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 34, 180, 12)) {
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 76, 180, 12)) {
                     toggleBool("movement.can_open_doors", false);
+                    return true;
+                }
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 92, 180, 12)) {
+                    toggleBool("movement.avoid_water", false);
+                    return true;
+                }
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 108, 180, 12)) {
+                    toggleBool("movement.can_jump", true);
+                    return true;
+                }
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 124, 180, 12)) {
+                    toggleBool("movement.can_climb", true);
+                    return true;
+                }
+                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 140, 180, 12)) {
+                    toggleBool("movement.can_fly", false);
                     return true;
                 }
             }
             case COMBAT -> {
-                if (PanelStyle.hit(mx, my, wellX + 8, wellY + 14, 100, PanelStyle.CONTROL_H)) {
-                    String type = JsonEdit.getString(entry.json, "combat.type", "none");
-                    int i = 0;
-                    for (int t = 0; t < COMBAT_TYPES.length; t++) if (COMBAT_TYPES[t].equals(type)) i = t;
-                    JsonEdit.set(entry.json, "combat.type", COMBAT_TYPES[(i + 1) % COMBAT_TYPES.length]);
-                    entry.dirty = true;
-                    setPage(Page.COMBAT);   // rebuild the type-dependent fields
-                    return true;
+                for (int i = 0; i < COMBAT_TYPES.length; i++) {
+                    if (PanelStyle.hit(mx, my, combatButtonX(i), wellY + 14,
+                            combatButtonW(), PanelStyle.CONTROL_H)) {
+                        JsonEdit.set(entry.json, "combat.type", COMBAT_TYPES[i]);
+                        entry.dirty = true;
+                        setPage(Page.COMBAT);   // rebuild the type-dependent fields
+                        return true;
+                    }
                 }
             }
             case AI -> {
-                if (PanelStyle.hit(mx, my, wellX + wellW - 96, wellY, 88, PanelStyle.CONTROL_H)) {
+                int addW = 72;
+                if (PanelStyle.hit(mx, my, wellX + wellW - addW - 8, wellY, addW, PanelStyle.CONTROL_H)) {
                     Minecraft.getInstance().gui.setScreen(new TypedObjectListScreen(
                             this, "AI GOALS", arr("ai"), GoalSchemas.goals(),
-                            () -> entry.dirty = true));
+                            () -> entry.dirty = true, true));
                     return true;
                 }
-                if (targetingButtonY >= 0 && PanelStyle.hit(mx, my,
-                        wellX + wellW - 108, targetingButtonY, 100, PanelStyle.CONTROL_H)) {
-                    Minecraft.getInstance().gui.setScreen(new TypedObjectListScreen(
-                            this, "TARGETING", arr("targeting"), GoalSchemas.targets(),
-                            () -> entry.dirty = true));
-                    return true;
+                java.util.List<AiRow> aiRowList = aiRows();
+                int visible = aiVisibleRows();
+                for (int r = 0; r < visible; r++) {
+                    int idx = listScroll + r;
+                    if (idx >= aiRowList.size()) break;
+                    AiRow row = aiRowList.get(idx);
+                    int ry = wellY + 30 + r * AI_ROW;
+                    int rx = wellX + 8;
+                    int rw = wellW - 16;
+
+                    if (row.kind().equals("theader")) {
+                        int tw = 80;
+                        if (PanelStyle.hit(mx, my, rx + rw - tw, ry + 1, tw, 22)) {
+                            Minecraft.getInstance().gui.setScreen(new TypedObjectListScreen(
+                                    this, "TARGETING", arr("targeting"), GoalSchemas.targets(),
+                                    () -> entry.dirty = true, true));
+                            return true;
+                        }
+                        continue;
+                    }
+
+                    JsonArray array = aiArray(row.kind().equals("goal") ? "ai" : "targeting");
+                    if (PanelStyle.hit(mx, my, rx + rw - 16, ry + 4, 12, 16)) {
+                        array.remove(row.arrayIndex());
+                        entry.dirty = true;
+                        return true;
+                    }
+                    var schemas = row.kind().equals("goal")
+                            ? GoalSchemas.goals() : GoalSchemas.targets();
+                    var schema = schemas.get(aiTypeId(row.obj()));
+                    if (schema != null && PanelStyle.hit(mx, my, rx + rw - 52, ry + 4, 32, 16)) {
+                        Minecraft.getInstance().gui.setScreen(
+                                new com.myyyst.myrpg.core.client.editor.TypedObjectConfigScreen(
+                                        this, array, schema.typeId(), schema.label(),
+                                        schema.fields(), row.obj(), () -> entry.dirty = true));
+                        return true;
+                    }
                 }
             }
             case ADVANCED -> {
@@ -1030,6 +1353,13 @@ public class EntityEditorScreen extends Screen {
         if (--validateCooldown <= 0) {
             validateCooldown = 20;
             issues = EntityValidator.validate(entry);
+        }
+        if (attrPicking) {
+            String query = attrQuery();
+            if (!query.equals(lastAttrQuery)) {
+                lastAttrQuery = query;
+                attrPickScroll = 0;
+            }
         }
     }
 
@@ -1078,9 +1408,15 @@ public class EntityEditorScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
         if (attrPicking) {
-            int max = Math.max(0, missingAttributes().size() - 10);
+            int max = Math.max(0, filteredMissingAttributes().size() - pickerRows());
             attrPickScroll = Math.max(0, Math.min(max,
-                    attrPickScroll - (int) Math.signum(vertical)));
+                    attrPickScroll - (int) Math.signum(vertical) * 3));
+            return true;
+        }
+        if (page == Page.AI && PanelStyle.hit(mouseX, mouseY,
+                wellX, wellY + 28, wellW, wellH - 28)) {
+            int max = Math.max(0, aiRows().size() - aiVisibleRows());
+            listScroll = Math.max(0, Math.min(max, listScroll - (int) Math.signum(vertical)));
             return true;
         }
         if (page == Page.ATTRIBUTES && PanelStyle.hit(mouseX, mouseY,

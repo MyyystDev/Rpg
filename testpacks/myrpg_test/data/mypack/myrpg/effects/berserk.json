@@ -1,0 +1,52 @@
+{
+  "display": {
+    "name": "Berserk",
+    "description": "More damage and speed per level, but you take more damage too.",
+    "color": "#FF6A00"
+  },
+  "category": "beneficial",
+  "tags": ["rpg:buff", "rpg:combat"],
+  "duration": {
+    "default": 600
+  },
+  "stacking": {
+    "mode": "extend",
+    "refresh_duration": false
+  },
+  "attributes": [
+    {
+      "attribute": "minecraft:attack_damage",
+      "operation": "add_value",
+      "value": 2.0,
+      "value_per_level": 1.0
+    },
+    {
+      "attribute": "minecraft:movement_speed",
+      "operation": "add_multiplied_total",
+      "value": 0.1
+    },
+    {
+      "attribute": "minecraft:armor",
+      "operation": "add_value",
+      "value": -4.0
+    }
+  ],
+  "events": {
+    "on_applied": [
+      {
+        "type": "myrpg_core:play_sound",
+        "sound": "minecraft:entity.ravager.roar",
+        "volume": 0.8,
+        "pitch": 1.4
+      }
+    ],
+    "on_expired": [
+      {
+        "type": "myrpg_core:play_sound",
+        "sound": "minecraft:block.fire.extinguish",
+        "volume": 0.7,
+        "pitch": 0.8
+      }
+    ]
+  }
+}

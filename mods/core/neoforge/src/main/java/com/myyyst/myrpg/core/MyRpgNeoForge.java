@@ -7,6 +7,7 @@ import com.myyyst.myrpg.core.client.editor.ClientEditorNet;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.core.editor.EditorNet;
+import com.myyyst.myrpg.core.effect.EffectManager;
 import com.myyyst.myrpg.core.event.RpgEvents;
 import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.stat.PlayerStatTicker;
@@ -21,6 +22,8 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -81,6 +84,9 @@ public class MyRpgNeoForge {
             event.addListener(
                     Identifier.fromNamespaceAndPath(Constants.MOD_ID, "conditions"),
                     CoreData.NAMED_CONDITIONS);
+            event.addListener(
+                    Identifier.fromNamespaceAndPath(Constants.MOD_ID, "effects"),
+                    CoreData.EFFECTS);
         }
 
         @SubscribeEvent
@@ -104,9 +110,28 @@ public class MyRpgNeoForge {
             }
         }
 
+        // Custom-effect restrictions: can_attack / can_use_items
+
+        @SubscribeEvent
+        public static void onAttackEntity(AttackEntityEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player
+                    && EffectManager.isRestricted(player, "attack")) {
+                event.setCanceled(true);
+            }
+        }
+
+        @SubscribeEvent
+        public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+            if (event.getEntity() instanceof ServerPlayer player
+                    && EffectManager.isRestricted(player, "use_items")) {
+                event.setCanceled(true);
+            }
+        }
+
         @SubscribeEvent
         public static void onLivingDeath(LivingDeathEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
+                EffectManager.onDeath(player);
                 RpgEvents.post(new RpgEvents.GameEvent(RpgEvents.PLAYER_DEATH, player, null));
             }
             if (event.getSource().getEntity() instanceof ServerPlayer killer

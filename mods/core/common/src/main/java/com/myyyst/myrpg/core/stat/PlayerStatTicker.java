@@ -2,6 +2,8 @@ package com.myyyst.myrpg.core.stat;
 
 import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.core.data.StatDef;
+import com.myyyst.myrpg.core.effect.EffectManager;
+import com.myyyst.myrpg.core.effect.PlayerEffects;
 import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.platform.Services;
 import net.minecraft.resources.Identifier;
@@ -19,6 +21,7 @@ public final class PlayerStatTicker {
             StatStore store = PlayerStats.get(player);
             StatEngine.tick(store, player);
             syncDirty(player, store);
+            EffectManager.tick(PlayerEffects.get(player), player);
         }
     }
 
@@ -34,6 +37,7 @@ public final class PlayerStatTicker {
                     }));
         }
         store.reapplyStages(player);
+        EffectManager.reapplyAll(player);
         PlayerStats.markDirty(player);
         syncFull(player, store);
     }
@@ -54,6 +58,7 @@ public final class PlayerStatTicker {
     public static void onJoin(ServerPlayer player) {
         StatStore store = PlayerStats.get(player);
         store.reapplyStages(player);
+        EffectManager.reapplyAll(player);
         syncFull(player, store);
     }
 

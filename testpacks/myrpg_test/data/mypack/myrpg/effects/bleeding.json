@@ -1,0 +1,30 @@
+{
+  "display": {
+    "name": "Bleeding",
+    "description": "Taking damage over time. Stacks up to 5.",
+    "color": "#C43535"
+  },
+  "category": "harmful",
+  "tags": ["rpg:physical", "rpg:damage_over_time"],
+  "duration": {
+    "default": 200
+  },
+  "stacking": {
+    "mode": "stacks",
+    "max_stacks": 5,
+    "refresh_duration": true
+  },
+  "rules": [
+    {
+      "trigger": { "type": "myrpg_core:interval", "ticks": 40 },
+      "actions": [
+        { "type": "myrpg_core:damage", "amount": 1.0 }
+      ]
+    }
+  ],
+  "display_options": {
+    "show_icon": true,
+    "show_duration": true,
+    "show_stacks": true
+  }
+}

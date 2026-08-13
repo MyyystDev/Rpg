@@ -9,6 +9,9 @@ import com.myyyst.myrpg.core.condition.CoreConditions;
 import com.myyyst.myrpg.core.condition.RpgCondition;
 import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.core.data.StatDef;
+import com.myyyst.myrpg.core.effect.EffectActions;
+import com.myyyst.myrpg.core.effect.EffectCommands;
+import com.myyyst.myrpg.core.effect.EffectConditions;
 import com.myyyst.myrpg.core.event.RpgEvents;
 import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.platform.Services;
@@ -36,6 +39,9 @@ public class MyRpgCommon {
         CoreConditions.bootstrap();
         RpgAction.bootstrap();
         StageEffect.bootstrap();
+        EffectConditions.bootstrap();
+        EffectActions.bootstrap();
+        EffectCommands.init();
         RpgTrigger.bootstrap();
         RpgEvents.subscribe(StatEngine::onEvent);
 

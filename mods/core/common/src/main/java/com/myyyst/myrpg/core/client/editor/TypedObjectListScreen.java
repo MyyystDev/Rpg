@@ -66,6 +66,13 @@ public class TypedObjectListScreen extends Screen {
         this(parent, title, list, null, customSchemas, onDirty, false);
     }
 
+    /** Custom-schema variant that opens straight in the type picker. */
+    public TypedObjectListScreen(Screen parent, String title, JsonArray list,
+                                 Map<String, EffectSchemas.EffectSchema> customSchemas,
+                                 Runnable onDirty, boolean startPicking) {
+        this(parent, title, list, null, customSchemas, onDirty, startPicking);
+    }
+
     private TypedObjectListScreen(Screen parent, String title, JsonArray list,
                                   Kind kind, Map<String, EffectSchemas.EffectSchema> customSchemas,
                                   Runnable onDirty, boolean startPicking) {

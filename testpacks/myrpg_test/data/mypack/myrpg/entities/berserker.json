@@ -83,5 +83,8 @@
         }
       ]
     }
+  ],
+  "effect_immunities": [
+    "#rpg:crowd_control"
   ]
 }
