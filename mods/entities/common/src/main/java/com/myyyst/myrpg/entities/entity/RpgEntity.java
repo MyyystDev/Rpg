@@ -110,6 +110,18 @@ public class RpgEntity extends PathfinderMob implements StatHolder, RangedAttack
         return entityData.get(DATA_TEXTURE);
     }
 
+    /**
+     * Editor-preview support: pushes appearance straight into the synced
+     * fields of a client-side, never-added entity so the GUI renderer shows
+     * live edits. Touches nothing the server cares about.
+     */
+    public void applyPreview(String modelId, String texture, double scale) {
+        entityData.set(DATA_MODEL, modelId);
+        entityData.set(DATA_TEXTURE, texture);
+        AttributeInstance scaleAttr = getAttribute(Attributes.SCALE);
+        if (scaleAttr != null) scaleAttr.setBaseValue(scale);
+    }
+
     @Nullable
     public Identifier definitionId() { return definitionId; }
 

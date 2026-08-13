@@ -28,6 +28,7 @@ public final class PanelStyle {
     public static final int TEXT        = 0xFFE8E8E8;
     public static final int TEXT_DIM    = 0xFF9C9CA0;
     public static final int ACCENT      = 0xFF9858B8;   // the doc's corruption purple
+    public static final int ACCENT_LIGHT = 0xFFC490E0;  // primary-button top/left bevel
     public static final int VALID       = 0xFF57B36A;
     public static final int EDITED      = 0xFFD8A93C;
     public static final int ERROR       = 0xFFD05050;
@@ -55,9 +56,23 @@ public final class PanelStyle {
                               int x, int y, int w, boolean hovered, boolean primary) {
         int bg = primary ? (hovered ? 0xFFAA6ACC : ACCENT)
                 : (hovered ? ROW_HOVER : PANEL_BG);
+        int bevelLight = primary ? ACCENT_LIGHT : PANEL_LIGHT;
         g.fill(x, y, x + w, y + CONTROL_H, bg);
-        g.fill(x, y, x + w, y + 1, PANEL_LIGHT);
-        g.fill(x, y, x + 1, y + CONTROL_H, PANEL_LIGHT);
+        g.fill(x, y, x + w, y + 1, bevelLight);
+        g.fill(x, y, x + 1, y + CONTROL_H, bevelLight);
+        g.fill(x, y + CONTROL_H - 1, x + w, y + CONTROL_H, PANEL_DARK);
+        g.fill(x + w - 1, y, x + w, y + CONTROL_H, PANEL_DARK);
+        int tw = font.width(label);
+        g.text(font, Component.literal(label), x + (w - tw) / 2, y + (CONTROL_H - 8) / 2, TEXT);
+    }
+
+    /** Colored button variant (e.g. the design book's green ADD COMPONENT). */
+    public static void button(GuiGraphicsExtractor g, Font font, String label,
+                              int x, int y, int w, boolean hovered,
+                              int base, int baseHover, int bevelLight) {
+        g.fill(x, y, x + w, y + CONTROL_H, hovered ? baseHover : base);
+        g.fill(x, y, x + w, y + 1, bevelLight);
+        g.fill(x, y, x + 1, y + CONTROL_H, bevelLight);
         g.fill(x, y + CONTROL_H - 1, x + w, y + CONTROL_H, PANEL_DARK);
         g.fill(x + w - 1, y, x + w, y + CONTROL_H, PANEL_DARK);
         int tw = font.width(label);

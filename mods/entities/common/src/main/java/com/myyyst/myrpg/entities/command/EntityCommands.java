@@ -4,6 +4,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.myyyst.myrpg.core.command.RpgCommands;
 import com.myyyst.myrpg.entities.data.EntitiesData;
+import com.myyyst.myrpg.entities.editor.EntityEditorNet;
 import com.myyyst.myrpg.entities.entity.RpgEntity;
 import com.myyyst.myrpg.entities.registry.RpgEntityTypes;
 import net.minecraft.commands.CommandSourceStack;
@@ -11,10 +12,13 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.IdentifierArgument;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -42,7 +46,32 @@ public final class EntityCommands {
 
                 .then(Commands.literal("inspect").executes(EntityCommands::inspect))
 
-                .then(Commands.literal("sethome").executes(EntityCommands::setHome))));
+                .then(Commands.literal("sethome").executes(EntityCommands::setHome))
+
+                .then(Commands.literal("wand").executes(ctx -> {
+                    if (!(ctx.getSource().getEntity() instanceof ServerPlayer player)) {
+                        ctx.getSource().sendFailure(Component.literal("Players only"));
+                        return 0;
+                    }
+                    var item = BuiltInRegistries.ITEM.getValue(
+                            Identifier.fromNamespaceAndPath("myrpg_entities", "entity_wand"));
+                    player.addItem(new ItemStack(item));
+                    ctx.getSource().sendSuccess(() -> Component.literal(
+                            "Entity wand: sneak-click to select, click block to place, click entity to edit"), false);
+                    return 1;
+                }))));
+
+        // merges with core's /myrpg editor node (brigadier merges same-name literals)
+        RpgCommands.contribute(root -> root.then(Commands.literal("editor")
+                .then(Commands.literal("entities")
+                        .executes(ctx -> {
+                            if (!(ctx.getSource().getEntity() instanceof ServerPlayer player)) {
+                                ctx.getSource().sendFailure(Component.literal("Players only"));
+                                return 0;
+                            }
+                            EntityEditorNet.sendBrowser(player);
+                            return 1;
+                        }))));
     }
 
     // ------------------------------------------------------------ spawn

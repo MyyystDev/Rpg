@@ -29,9 +29,10 @@ public record EntityDefinition(
         List<StatDef.Rule> rules
 ) {
 
-    public record Display(Optional<String> name, boolean nameVisible) {
+    public record Display(Optional<String> name, Optional<String> description, boolean nameVisible) {
         public static final Codec<Display> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.optionalFieldOf("name").forGetter(Display::name),
+                Codec.STRING.optionalFieldOf("description").forGetter(Display::description),
                 Codec.BOOL.optionalFieldOf("name_visible", true).forGetter(Display::nameVisible)
         ).apply(i, Display::new));
     }

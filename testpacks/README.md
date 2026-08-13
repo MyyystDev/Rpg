@@ -54,3 +54,37 @@ Test checklist:
 - Hermit now avoids creepers (avoid_entity goal).
 - `/myrpg entity sethome` — stand somewhere, run it, nearest custom entity
   anchors its guard/home position there (persists through save/load).
+
+### Component editor (design book pages 03-11, v1)
+- `/myrpg editor entities` → browser. Left-click a row = component editor,
+  right-click = context menu (OPEN / SPAWN / DUPLICATE / COPY ID / OPEN
+  JSON / DELETE), + NEW ENTITY = create dialog with templates.
+- Editor pages: General, Appearance (model cycle + texture + scale),
+  Attributes, Movement, Combat (type-dependent fields), AI (read-only
+  list), Drops, Advanced (despawn + live JSON). SAVE validates through
+  EntityDefinition.CODEC server-side, writes to the world's
+  `myrpg_editor` overlay datapack and /reloads — same pipeline as the
+  stat editor. DELETE only removes overlay files.
+- Quick test: NEW ENTITY → Guard template → name "Test Guard" → SAVE →
+  SPAWN. Then edit its max health, SAVE, SPAWN again and inspect.
+
+### Live 3D preview
+The entity editor's right pane now renders the actual entity (model,
+texture, scale, held items + armor) via the vanilla inventory-preview
+pipeline; it follows the mouse and updates live as you edit Appearance
+or equipment JSON. Test: open the berserker in the editor, cycle the
+model, change scale to 2.0 — the preview updates instantly, before save.
+
+### Entity Wand (in-world placement tool)
+`/myrpg entity wand` gives the wand (blaze-rod look). Sneak-right-click to
+cycle the selected definition, right-click a block to place it exactly
+there facing you, right-click any placed custom entity to open its
+definition straight in the editor. All wand actions are gamemaster-gated.
+
+### Equipment page + validation
+Editor gains an EQUIPMENT page (six slots, item IDs validated with
+green/red dots, mirrored live in the 3D preview) and validation: a
+chip in the editor header (N ERROR / N WARN), the full list on the
+Advanced page, and SAVE now blocks on errors (unknown items/attributes,
+bad texture or loot-table ids) while warnings (combat without targeting,
+no AI goals, addon types) just advise.

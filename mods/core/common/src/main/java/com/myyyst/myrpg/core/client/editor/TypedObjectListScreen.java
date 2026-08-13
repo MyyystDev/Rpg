@@ -36,7 +36,8 @@ public class TypedObjectListScreen extends Screen {
     private final Screen parent;
     private final String title;
     private final JsonArray list;
-    private final Kind kind;
+    private final Kind kind;   // null when customSchemas drives this screen
+    private final java.util.@org.jspecify.annotations.Nullable Map<String, EffectSchemas.EffectSchema> customSchemas;
     private final Runnable onDirty;
 
     private final Map<String, SchemaView> schemas = new LinkedHashMap<>();
@@ -49,22 +50,42 @@ public class TypedObjectListScreen extends Screen {
 
     public TypedObjectListScreen(Screen parent, String title, JsonArray list,
                                  Kind kind, Runnable onDirty) {
-        this(parent, title, list, kind, onDirty, false);
+        this(parent, title, list, kind, null, onDirty, false);
     }
 
     public TypedObjectListScreen(Screen parent, String title, JsonArray list,
                                  Kind kind, Runnable onDirty, boolean startPicking) {
+        this(parent, title, list, kind, null, onDirty, startPicking);
+    }
+
+    /** Custom-schema variant — other mods (entities: AI goals, targeting)
+     *  reuse this screen with their own registered type catalogs. */
+    public TypedObjectListScreen(Screen parent, String title, JsonArray list,
+                                 Map<String, EffectSchemas.EffectSchema> customSchemas,
+                                 Runnable onDirty) {
+        this(parent, title, list, null, customSchemas, onDirty, false);
+    }
+
+    private TypedObjectListScreen(Screen parent, String title, JsonArray list,
+                                  Kind kind, Map<String, EffectSchemas.EffectSchema> customSchemas,
+                                  Runnable onDirty, boolean startPicking) {
         super(Component.literal(title));
         this.parent = parent;
         this.title = title;
         this.list = list;
         this.kind = kind;
+        this.customSchemas = customSchemas;
         this.onDirty = onDirty;
         this.picking = startPicking;
         loadSchemas();
     }
 
     private void loadSchemas() {
+        if (customSchemas != null) {
+            customSchemas.values().forEach(s ->
+                    schemas.put(s.typeId(), new SchemaView(s.typeId(), s.label(), s.category(), s.fields())));
+            return;
+        }
         switch (kind) {
             case CONDITION -> ConditionSchemas.all().values().forEach(s ->
                     schemas.put(s.typeId(), new SchemaView(s.typeId(), s.label(), s.category(), s.fields())));
@@ -210,6 +231,7 @@ public class TypedObjectListScreen extends Screen {
     }
 
     private String singular() {
+        if (kind == null) return "ENTRY";
         return switch (kind) {
             case CONDITION -> "CONDITION";
             case ACTION -> "ACTION";
