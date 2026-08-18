@@ -26,12 +26,23 @@ import net.minecraft.world.item.Item;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
+/**
+ * Fabric entry point for the entities mod.
+ *
+ * <p>Registers the single {@code rpg_entity} type and the creator wand, hooks the entity
+ * datapack loader into /reload, and wires the browser/editor packets. The mod's own logic
+ * lives in {@code MyrpgEntities.init}, which runs last so registration is complete first.</p>
+ */
 public class MyrpgEntitiesFabric implements ModInitializer {
 
+    /** The registered entity type; also handed to the common module via RpgEntityTypes. */
     public static EntityType<RpgEntity> RPG_ENTITY;
 
+    /** Called once by Fabric on both client and dedicated server. */
     @Override
     public void onInitialize() {
+        // One entity type for every custom entity — 0.6 x 1.95 is the player-sized default,
+        // which individual definitions can override through their appearance block.
         Identifier entityId = Identifier.fromNamespaceAndPath(
                 MyrpgEntities.MOD_ID, RpgEntityTypes.RPG_ENTITY_ID);
         ResourceKey<EntityType<?>> key = ResourceKey.create(Registries.ENTITY_TYPE, entityId);
@@ -41,16 +52,18 @@ public class MyrpgEntitiesFabric implements ModInitializer {
                         .build(key));
 
         FabricDefaultAttributeRegistry.register(RPG_ENTITY, RpgEntity.createAttributes());
-        RpgEntityTypes.setRpg_entity(() -> RPG_ENTITY);
+        RpgEntityTypes.setRpg_entity(() -> RPG_ENTITY);   // let common code reach the type
 
         Identifier wandId = Identifier.fromNamespaceAndPath(MyrpgEntities.MOD_ID, "entity_wand");
         Registry.register(BuiltInRegistries.ITEM, wandId,
                 new EntityWandItem(new Item.Properties().stacksTo(1)
                         .setId(ResourceKey.create(Registries.ITEM, wandId))));
 
+        // Hook the entity definition loader into /reload.
         ResourceManagerHelper.get(PackType.SERVER_DATA)
                 .registerReloadListener(new ReloadAdapter("entities", EntitiesData.ENTITIES));
 
+        // Payload codecs first, then receivers — a receiver for an unregistered type throws.
         PayloadTypeRegistry.clientboundPlay().register(
                 EntitiesPayloads.OpenEntityBrowser.TYPE,
                 EntitiesPayloads.OpenEntityBrowser.STREAM_CODEC);
@@ -82,6 +95,10 @@ public class MyrpgEntitiesFabric implements ModInitializer {
         MyrpgEntities.init();
     }
 
+    /**
+     * Wraps a plain {@code PreparableReloadListener} so Fabric can register it - the same
+     * adapter the core module needs, since Fabric requires an identifier on every listener.
+     */
     private static class ReloadAdapter implements IdentifiableResourceReloadListener {
 
         private final Identifier id;

@@ -16,17 +16,21 @@ import java.util.List;
  */
 public class StatLibraryScreen extends Screen {
 
+    /** The editor's scratch copy of every stat; shared with the screens opened from here. */
     private final StatWorkingSet workingSet;
     private EditBox searchBox;
+    /** Index of the first visible row. */
     private int scroll;
     private final List<Integer> visible = new ArrayList<>();   // filtered indices
 
     // context menu state
+    /** Entry the context menu belongs to, or -1 when no menu is open. */
     private int menuEntry = -1;
     private int menuX, menuY;
     private static final String[] MENU = {"OPEN", "DUPLICATE", "COPY ID", "DELETE"};
 
     // delete confirmation state
+    /** Entry awaiting delete confirmation, or -1. Deleting is the one irreversible action here. */
     private int confirmEntry = -1;
 
     // layout, computed in init
@@ -56,6 +60,11 @@ public class StatLibraryScreen extends Screen {
         refilter();
     }
 
+    /**
+     * Rebuilds {@link #visible} from the search text, matching id or display name.
+     * Indices (not entries) are stored so the rest of the screen can address the working
+     * set directly, and scrolling resets so the first result is always in view.
+     */
     private void refilter() {
         visible.clear();
         String query = searchBox == null ? "" : searchBox.getValue().toLowerCase();
@@ -105,6 +114,7 @@ public class StatLibraryScreen extends Screen {
             g.fill(rx, ry, rx + rw, ry + PanelStyle.ROW_H - 4, hovered ? PanelStyle.ROW_HOVER : PanelStyle.ROW_BG);
 
             // left column: name (with status chip beside it) over id
+            // The chip is the entry's state at a glance: unparseable, edited, or clean.
             String name = entry.displayName().toUpperCase();
             g.text(font, Component.literal(name), rx + PanelStyle.GRID, ry + 8, PanelStyle.TEXT);
             int chipX = rx + PanelStyle.GRID + font.width(name) + 8;
@@ -137,11 +147,12 @@ public class StatLibraryScreen extends Screen {
 
         super.extractRenderState(g, mouseX, mouseY, delta);   // widgets (search box)
 
-        // overlays last
+        // overlays last, so they paint on top of the list and the widgets
         if (menuEntry >= 0) renderContextMenu(g, mouseX, mouseY);
         if (confirmEntry >= 0) renderConfirm(g, mouseX, mouseY);
     }
 
+    /** Right-click menu, drawn at the click position. DELETE is tinted red. */
     private void renderContextMenu(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int w = 110, h = MENU.length * 16 + 4;
         PanelStyle.panel(g, menuX, menuY, w, h);
@@ -154,6 +165,7 @@ public class StatLibraryScreen extends Screen {
         }
     }
 
+    /** Centred "are you sure" dialog for deletion; dims the whole screen behind it. */
     private void renderConfirm(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int w = 220, h = 96;
         int cx = (width - w) / 2, cy = (height - h) / 2;
@@ -175,6 +187,8 @@ public class StatLibraryScreen extends Screen {
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x(), my = event.y();
 
+        // Overlays are modal: while one is open it consumes every click, and clicking
+        // anywhere outside its buttons simply dismisses it.
         if (confirmEntry >= 0) {
             int w = 220, h = 96, cx = (width - w) / 2, cy = (height - h) / 2;
             if (PanelStyle.hit(mx, my, cx + w - 96 - PanelStyle.GRID, cy + h - 32, 96, PanelStyle.CONTROL_H)) {
@@ -218,7 +232,7 @@ public class StatLibraryScreen extends Screen {
             int rx = px + PanelStyle.GRID + 2;
             int rw = pw - PanelStyle.GRID * 2 - 18;
             if (PanelStyle.hit(mx, my, rx, ry, rw, PanelStyle.ROW_H - 4)) {
-                if (event.button() == 1) {
+                if (event.button() == 1) {   // right click opens the context menu
                     menuEntry = visible.get(idx);
                     menuX = (int) mx;
                     menuY = (int) my;
@@ -231,6 +245,11 @@ public class StatLibraryScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /**
+     * Runs a context-menu action.
+     * DUPLICATE only creates a local dirty entry - nothing is written until it is saved -
+     * while DELETE goes through the confirmation dialog.
+     */
     private void handleMenu(String action) {
         StatWorkingSet.Entry entry = workingSet.entries.get(menuEntry);
         switch (action) {
@@ -248,6 +267,7 @@ public class StatLibraryScreen extends Screen {
         }
     }
 
+    /** Opens the full editor for one entry. */
     private void openEntry(int index) {
         StatWorkingSet.Entry entry = workingSet.entries.get(index);
 
@@ -264,6 +284,7 @@ public class StatLibraryScreen extends Screen {
         }
     }
 
+    /** One row per wheel notch, clamped so the last page cannot scroll past the end. */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
         int max = Math.max(0, visible.size() - listH / PanelStyle.ROW_H);
@@ -271,6 +292,7 @@ public class StatLibraryScreen extends Screen {
         return true;
     }
 
+    /** Last search text seen, so the list is only rebuilt when it actually changes. */
     private String lastQuery = "";
 
     @Override
@@ -282,6 +304,7 @@ public class StatLibraryScreen extends Screen {
         }
     }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() { return false; }
 

@@ -27,11 +27,13 @@ public final class EffectConditions {
         register("has_effect_tag", HasEffectTag.CODEC);
     }
 
+    /** Registers one condition type under {@code myrpg_core:<path>}. */
     private static void register(String path, MapCodec<? extends RpgCondition> codec) {
         RpgCondition.REGISTRY.register(
                 Identifier.fromNamespaceAndPath(Constants.MOD_ID, path), codec);
     }
 
+    /** @return self's effect store, or null when self is absent or cannot carry effects. */
     @Nullable
     private static EffectStore storeOf(RpgCondition.ConditionContext ctx) {
         LivingEntity self = ctx.self();
@@ -57,6 +59,7 @@ public final class EffectConditions {
     /**
      * { "type": "myrpg_core:effect_stacks", "effect": "...",
      *   "at_least": 3, "at_most": 5 }   (both bounds optional)
+     * Inclusive on both ends; false if the effect is absent entirely.
      */
     public record EffectStacks(Identifier effect, int atLeast, int atMost) implements RpgCondition {
         static final MapCodec<EffectStacks> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -77,6 +80,7 @@ public final class EffectConditions {
     /**
      * { "type": "myrpg_core:effect_level", "effect": "...",
      *   "at_least": 2, "at_most": 4 }   (both bounds optional)
+     * Same shape as effect_stacks, but tests the strength tier instead.
      */
     public record EffectLevel(Identifier effect, int atLeast, int atMost) implements RpgCondition {
         static final MapCodec<EffectLevel> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -94,7 +98,10 @@ public final class EffectConditions {
         @Override public MapCodec<? extends RpgCondition> codec() { return CODEC; }
     }
 
-    /** { "type": "myrpg_core:has_effect_category", "category": "harmful" } */
+    /**
+     * { "type": "myrpg_core:has_effect_category", "category": "harmful" }
+     * True if any active effect belongs to that category - "am I debuffed at all?".
+     */
     public record HasEffectCategory(String category) implements RpgCondition {
         static final MapCodec<HasEffectCategory> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.STRING.fieldOf("category").forGetter(HasEffectCategory::category)
@@ -113,7 +120,10 @@ public final class EffectConditions {
         @Override public MapCodec<? extends RpgCondition> codec() { return CODEC; }
     }
 
-    /** { "type": "myrpg_core:has_effect_tag", "tag": "rpg:crowd_control" } */
+    /**
+     * { "type": "myrpg_core:has_effect_tag", "tag": "rpg:crowd_control" }
+     * True if any active effect carries that tag.
+     */
     public record HasEffectTag(String tag) implements RpgCondition {
         static final MapCodec<HasEffectTag> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.STRING.fieldOf("tag").forGetter(HasEffectTag::tag)
@@ -132,5 +142,6 @@ public final class EffectConditions {
         @Override public MapCodec<? extends RpgCondition> codec() { return CODEC; }
     }
 
+    /** Namespace class for the effect condition records: never instantiated. */
     private EffectConditions() {}
 }

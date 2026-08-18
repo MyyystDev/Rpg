@@ -12,10 +12,14 @@ import java.util.List;
 /** Client-side working copies of every entity definition (mirrors StatWorkingSet). */
 public class EntityWorkingSet {
 
+    /** One entity being edited. */
     public static class Entry {
+        /** Namespaced id, editable because "save as" can rename an entry. */
         public String entityId;
+        /** Parsed JSON being edited; null when the file failed to parse. */
         public @Nullable JsonObject json;
         public @Nullable String parseError;
+        /** True once edited and not yet saved. */
         public boolean dirty;
 
         public Entry(String entityId, @Nullable JsonObject json) {
@@ -23,6 +27,7 @@ public class EntityWorkingSet {
             this.json = json;
         }
 
+        /** Declared name, or the id path as fallback. */
         public String displayName() {
             if (json != null && json.has("display")
                     && json.getAsJsonObject("display").has("name")) {
@@ -31,6 +36,10 @@ public class EntityWorkingSet {
             return entityId.contains(":") ? entityId.split(":", 2)[1] : entityId;
         }
 
+        /**
+         * Uppercased tag labels for the browser row.
+         * Falls back to a derived HOSTILE/NPC label so every row says something useful.
+         */
         public List<String> tags() {
             List<String> tags = new ArrayList<>();
             if (json != null && json.has("tags")) {
@@ -45,12 +54,14 @@ public class EntityWorkingSet {
             return tags;
         }
 
+        /** Treated as hostile when it has any targeting rules at all. */
         public boolean hostile() {
             return json != null && json.has("targeting")
                     && json.get("targeting").isJsonArray()
                     && !json.getAsJsonArray("targeting").isEmpty();
         }
 
+        /** Boss if it declares a boss bar or carries a "boss" tag. */
         public boolean boss() {
             return (json != null && json.has("boss_bar")) || tagsRaw().contains("boss");
         }
@@ -59,13 +70,19 @@ public class EntityWorkingSet {
             return json != null && json.has("tags") ? json.get("tags").toString().toLowerCase() : "";
         }
 
+        /** Row colour: purple for bosses, red for hostiles, amber for everything else. */
         public int accent() {
             return boss() ? PanelStyle.ACCENT : hostile() ? PanelStyle.ERROR : PanelStyle.EDITED;
         }
     }
 
+    /** Every entity in the editor, sorted by id. */
     public final List<Entry> entries = new ArrayList<>();
 
+    /**
+     * Builds the working set from the definitions the server sent.
+     * A file that fails to parse still becomes an entry, with its error recorded.
+     */
     public EntityWorkingSet(EntitiesPayloads.OpenEntityBrowser payload) {
         for (EntitiesPayloads.EntityFile file : payload.entities()) {
             Entry entry = new Entry(file.entityId(), null);

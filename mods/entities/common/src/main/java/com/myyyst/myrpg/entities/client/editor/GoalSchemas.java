@@ -15,17 +15,27 @@ import java.util.Map;
  */
 public final class GoalSchemas {
 
+    /** Schemas for the "ai" array, keyed by type id. Insertion-ordered for the picker. */
     private static final Map<String, EffectSchema> GOALS = new LinkedHashMap<>();
+    /** Schemas for the "targeting" array, keyed by type id. */
     private static final Map<String, EffectSchema> TARGETS = new LinkedHashMap<>();
 
+    /** Addons call this alongside their {@code AiGoalDef.REGISTRY.register}. */
     public static void registerGoal(EffectSchema schema) { GOALS.put(schema.typeId(), schema); }
+    /** Addons call this alongside their {@code TargetDef.REGISTRY.register}. */
     public static void registerTarget(EffectSchema schema) { TARGETS.put(schema.typeId(), schema); }
 
+    /** Catalog handed to the shared list screen when editing "ai". */
     public static Map<String, EffectSchema> goals() { return GOALS; }
+    /** Catalog handed to the shared list screen when editing "targeting". */
     public static Map<String, EffectSchema> targets() { return TARGETS; }
 
+    /** Shorthand for a type id in this mod's namespace. */
     private static String id(String path) { return "myrpg_entities:" + path; }
 
+    // Schemas for the built-in types, mirroring AiGoals.init() and Targets.init().
+    // Defaults here must match the codecs' defaults, or the editor would silently
+    // rewrite values an author never touched.
     static {
         registerGoal(new EffectSchema(id("melee_attack"), "Melee Attack", "COMBAT", List.of(
                 FieldSpec.number("PRIORITY", "priority", "2"),
@@ -71,5 +81,6 @@ public final class GoalSchemas {
                 FieldSpec.text("ENTITY", "entity", "minecraft:zombie"))));
     }
 
+    /** Static-only registry: never instantiated. */
     private GoalSchemas() {}
 }

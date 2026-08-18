@@ -22,16 +22,21 @@ import java.util.Map;
  */
 public final class RpgModels {
 
+    /** A model layer to bake plus the texture to use when a definition names none. */
     public record Bundle(ModelLayerLocation layer, Identifier defaultTexture) {}
 
+    /** Insertion-ordered so editor drop-downs list models predictably. */
     private static final Map<Identifier, Bundle> REGISTRY = new LinkedHashMap<>();
 
+    /** The default model, and the fallback when a definition names an unknown one. */
     public static final Identifier HUMANOID = id("humanoid");
 
+    /** Addons register extra bundles here, before renderers are constructed. */
     public static void register(Identifier modelId, Bundle bundle) {
         REGISTRY.put(modelId, bundle);
     }
 
+    /** Every registered bundle, keyed by model id. */
     public static Map<Identifier, Bundle> all() {
         return REGISTRY;
     }
@@ -40,10 +45,15 @@ public final class RpgModels {
         return Identifier.fromNamespaceAndPath(MyrpgEntities.MOD_ID, path);
     }
 
+    /** Shorthand for a vanilla ("minecraft") identifier. */
     private static Identifier mc(String path) {
         return Identifier.withDefaultNamespace(path);
     }
 
+    /**
+     * Registers the built-in bundles. Idempotent: called from the renderer's constructor,
+     * which may run more than once, and skips if anything is already registered.
+     */
     public static void bootstrap() {
         if (!REGISTRY.isEmpty()) return;
         register(HUMANOID, new Bundle(ModelLayers.PLAYER,
@@ -56,5 +66,6 @@ public final class RpgModels {
                 mc("textures/entity/skeleton/skeleton.png")));
     }
 
+    /** Static-only registry: never instantiated. */
     private RpgModels() {}
 }

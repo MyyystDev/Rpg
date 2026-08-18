@@ -9,7 +9,13 @@ import com.myyyst.myrpg.core.variable.Variables;
 
 import java.util.Optional;
 
-/** variable / variable_exists / variable_compare. */
+/**
+ * variable / variable_exists / variable_compare.
+ *
+ * <p>Read-side counterpart to the {@code set_variable} / {@code modify_variable} actions.
+ * All three fail closed: a missing variable (with no declared default) makes the condition
+ * false rather than throwing.</p>
+ */
 public final class VariableConditions {
 
     /**
@@ -30,6 +36,7 @@ public final class VariableConditions {
 
         @Override
         public boolean test(ConditionContext ctx) {
+            // unset -> fall back to the declared default, or fail if there is none
             VarValue current = Variables.get(ctx.self().level(), scope, name, ctx.player())
                     .or(this::defaultValue).orElse(null);
             if (current == null) return false;
@@ -38,6 +45,7 @@ public final class VariableConditions {
         @Override public MapCodec<? extends RpgCondition> codec() { return CODEC; }
     }
 
+    /** True when the variable has been set at all, whatever its value. */
     public record VariableExists(String scope, String name) implements RpgCondition {
         public static final MapCodec<VariableExists> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.STRING.optionalFieldOf("scope", "player").forGetter(VariableExists::scope),
@@ -51,7 +59,7 @@ public final class VariableConditions {
         @Override public MapCodec<? extends RpgCondition> codec() { return CODEC; }
     }
 
-    /** Compares two variables to each other. */
+    /** Compares two variables to each other. Both must exist, or the condition is false. */
     public record VariableCompare(String scopeA, String nameA, String operator,
                                   String scopeB, String nameB) implements RpgCondition {
         public static final MapCodec<VariableCompare> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -72,6 +80,11 @@ public final class VariableConditions {
         @Override public MapCodec<? extends RpgCondition> codec() { return CODEC; }
     }
 
+    /**
+     * Shared comparison helper. Numeric on both sides gives the full set of operators;
+     * anything else degrades to string equality, where only == and != are meaningful
+     * (any other operator behaves as ==).
+     */
     private static boolean compare(VarValue a, String operator, VarValue b) {
         if (a.isNumber() && b.isNumber()) {
             double x = a.asNumber(), y = b.asNumber();
@@ -89,5 +102,6 @@ public final class VariableConditions {
         return "!=".equals(operator) ? !equal : equal;
     }
 
+    /** Namespace class for the variable condition records: never instantiated. */
     private VariableConditions() {}
 }

@@ -6,16 +6,31 @@ import java.util.Map;
 
 import static com.myyyst.myrpg.core.client.editor.EffectSchemas.FieldSpec;
 
-/** Client-side form schemas for registered condition types. */
+/**
+ * Client-side form schemas for registered condition types - the condition counterpart of
+ * {@link EffectSchemas} (whose {@code FieldSpec} it reuses).
+ *
+ * <p>Only flat, field-based conditions appear here. The combinators (and/or/not/...) nest
+ * other conditions and would need a recursive editor, so they are intentionally absent -
+ * see the note at the end of the initialiser.</p>
+ */
 public final class ConditionSchemas {
 
+    /**
+     * The editor form for one condition type.
+     * @param typeId must match the id used in {@code RpgCondition.REGISTRY}
+     */
     public record ConditionSchema(String typeId, String label, String category, List<FieldSpec> fields) {}
 
+    /** Insertion-ordered so the picker groups conditions in a stable order. */
     private static final Map<String, ConditionSchema> SCHEMAS = new LinkedHashMap<>();
 
+    /** Addons call this alongside their {@code RpgCondition.REGISTRY.register}. */
     public static void register(ConditionSchema schema) { SCHEMAS.put(schema.typeId(), schema); }
+    /** Every known schema, keyed by type id. */
     public static Map<String, ConditionSchema> all() { return SCHEMAS; }
 
+    // Schemas for core's own conditions, mirroring CoreConditions.bootstrap().
     static {
         register(new ConditionSchema("myrpg_core:stat", "Stat Compare", "STATS", List.of(
                 FieldSpec.text("STAT", "stat", "test:corruption"),
@@ -52,5 +67,6 @@ public final class ConditionSchemas {
         // Hand-written JSON using them still loads and round-trips fine.
     }
 
+    /** Static-only registry: never instantiated. */
     private ConditionSchemas() {}
 }

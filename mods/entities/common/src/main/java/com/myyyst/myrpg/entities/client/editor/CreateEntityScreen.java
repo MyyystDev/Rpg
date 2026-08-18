@@ -17,16 +17,20 @@ import net.minecraft.resources.Identifier;
  */
 public class CreateEntityScreen extends Screen {
 
+    /** Model choices offered by the cycle button; must exist in {@code RpgModels}. */
     private static final String[] MODELS = {"humanoid", "humanoid_slim", "zombie", "skeleton"};
 
     private final EntityBrowserScreen parent;
+    /** Used to reject an id that already exists. */
     private final EntityWorkingSet workingSet;
 
     private EditBox nameBox;
     private EditBox idBox;
+    /** Once the user types in the id box, the name no longer overwrites it. */
     private boolean idEdited;
     private int templateIndex;
     private int modelIndex;
+    /** Validation message shown in the dialog, empty when there is none. */
     private String error = "";
 
     // layout (single source of truth)
@@ -90,6 +94,7 @@ public class CreateEntityScreen extends Screen {
         addRenderableWidget(idBox);
     }
 
+    /** Turns a display name into a legal id path ("Town Guard" -> "town_guard"). */
     private static String slug(String name) {
         return name.toLowerCase().trim().replace(' ', '_').replaceAll("[^a-z0-9_/.-]", "");
     }
@@ -134,6 +139,7 @@ public class CreateEntityScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, delta);
     }
 
+    /** Right-hand panel listing which components the chosen template will include. */
     private void renderTemplatePreview(GuiGraphicsExtractor g) {
         PanelStyle.inset(g, previewX, previewY, previewW, previewH);
         g.text(font, Component.literal(EntityTemplates.NAMES[templateIndex] + " TEMPLATE"),
@@ -191,6 +197,7 @@ public class CreateEntityScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /** Builds the entity from the template, saves it, and adds it to the browser. */
     private void create() {
         String id = idBox.getValue().trim();
         if (!id.contains(":") || Identifier.tryParse(id) == null) {
@@ -213,6 +220,7 @@ public class CreateEntityScreen extends Screen {
         Minecraft.getInstance().gui.setScreen(new EntityEditorScreen(parent, entry));
     }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() {
         return false;

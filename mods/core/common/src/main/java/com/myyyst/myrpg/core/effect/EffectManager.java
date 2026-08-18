@@ -27,15 +27,29 @@ import java.util.function.Predicate;
  * to the manager, never to instance state directly). Handles stacking
  * modes, lifecycle events, attribute modifiers with stack/level scaling,
  * restriction modifiers, interval rules, and expiry.
+ *
+ * <p>Server side only. The pieces it coordinates:</p>
+ * <ul>
+ *   <li>{@code EffectDefinition} - immutable datapack template</li>
+ *   <li>{@code EffectInstance}   - the live per-entity state (duration, level, stacks)</li>
+ *   <li>{@code EffectStore}      - the instance list owned by one entity</li>
+ * </ul>
+ *
+ * <p>Attribute modifiers are keyed by a deterministic id per effect, so re-applying is
+ * always safe and never double-stacks.</p>
  */
 public final class EffectManager {
 
     // ------------------------------------------------------------ apply
 
     /**
+     * Applies an effect, or merges into the existing one according to its stacking mode.
+     *
      * @param durationOverride ticks; negative = use the definition default
+     * @param level            strength tier, clamped to >= 1
      * @param stacks           applications to add (>= 1)
-     * @return true if anything changed
+     * @param source           who applied it, for attribution; may be null
+     * @return true if anything changed (false for unknown effects, storeless or immune targets)
      */
     public static boolean apply(LivingEntity target, Identifier effectId,
                                 int durationOverride, int level, int stacks,
@@ -51,12 +65,14 @@ public final class EffectManager {
             return false;
         }
 
+        // -1 marks an infinite effect; otherwise honour the override, then the cap.
         int duration = def.duration().infinite() ? -1
                 : def.duration().clamp(durationOverride >= 0 ? durationOverride
                         : def.duration().defaultTicks());
 
         EffectInstance existing = store.get(effectId);
         if (existing == null) {
+            // Fresh application: create, apply modifiers, fire on_applied.
             EffectInstance instance = new EffectInstance(effectId, duration, level,
                     Math.min(Math.max(1, stacks), Math.max(1, def.stacking().maxStacks())), source);
             store.all().add(instance);
@@ -66,19 +82,20 @@ public final class EffectManager {
             return true;
         }
 
+        // Already present: merge according to the declared stacking mode.
         switch (def.stacking().mode()) {
-            case "replace" -> {
+            case "replace" -> {   // wipe the old state, keep the same instance object
                 existing.remaining = duration;
                 existing.level = Math.max(1, level);
                 existing.stacks = Math.max(1, stacks);
                 existing.source = source;
             }
-            case "extend" -> {
+            case "extend" -> {   // add to the remaining time, still capped by "maximum"
                 if (!existing.infinite() && duration > 0) {
                     existing.remaining = def.duration().clamp(existing.remaining + duration);
                 }
             }
-            case "stacks" -> {
+            case "stacks" -> {   // grow the stack count, firing the stack events on the way
                 int max = Math.max(1, def.stacking().maxStacks());
                 int before = existing.stacks;
                 existing.stacks = Math.min(max, existing.stacks + Math.max(1, stacks));
@@ -90,7 +107,7 @@ public final class EffectManager {
                     }
                 }
             }
-            default -> existing.remaining = duration;   // refresh
+            default -> existing.remaining = duration;   // refresh: just reset the timer
         }
         // the on_max_stacks handler may have removed the effect — re-check
         EffectInstance current = store.get(effectId);
@@ -118,7 +135,11 @@ public final class EffectManager {
         return true;
     }
 
-    /** Removes every effect whose definition matches; returns count. */
+    /**
+     * Removes every effect whose definition matches; returns count.
+     * Used for cleanse-style actions ("remove all harmful effects", "remove tag X").
+     * Iterates over a copy because removal mutates the store.
+     */
     public static int removeWhere(LivingEntity target, Predicate<EffectDefinition> predicate) {
         EffectStore store = EffectHolder.resolve(target);
         if (store == null) return 0;
@@ -132,6 +153,10 @@ public final class EffectManager {
         return removed;
     }
 
+    /**
+     * Drops {@code count} stacks; removing the last stack removes the effect entirely.
+     * Surviving stacks get their attribute modifiers rescaled.
+     */
     public static boolean removeStacks(LivingEntity target, Identifier effectId, int count) {
         EffectStore store = EffectHolder.resolve(target);
         if (store == null) return false;
@@ -156,12 +181,14 @@ public final class EffectManager {
             EffectDefinition def = CoreData.EFFECTS.get(instance.effectId).orElse(null);
             if (def == null) continue;   // dormant until a datapack defines it again
 
+            // interval rules attached to the effect (damage over time, periodic messages...)
             for (StatDef.Rule rule : def.rules()) {
                 if (!rule.trigger().shouldFireAt(gameTime, owner)) continue;
                 if (!allPass(rule.conditions(), owner)) continue;
                 runActions(owner, rule.actions());
             }
 
+            // countdown; hitting zero fires on_expired rather than on_removed
             if (!instance.infinite()) {
                 instance.remaining--;
                 if (instance.remaining <= 0) {
@@ -195,7 +222,12 @@ public final class EffectManager {
 
     // ------------------------------------------------------------ restrictions
 
-    /** what: "move" | "jump" | "attack" | "use_items" */
+    /**
+     * True if any active effect forbids the given action.
+     * Restrictions are OR-ed: one stun is enough to block movement.
+     *
+     * @param what "move" | "jump" | "attack" | "use_items"
+     */
     public static boolean isRestricted(LivingEntity owner, String what) {
         EffectStore store = EffectHolder.resolve(owner);
         if (store == null || store.isEmpty()) return false;
@@ -217,11 +249,20 @@ public final class EffectManager {
 
     // ------------------------------------------------------------ modifiers
 
+    /**
+     * Deterministic modifier id "myrpg_core:effect/&lt;ns&gt;/&lt;effect&gt;/&lt;suffix&gt;".
+     * The suffix is the attribute's index in the definition ("attr0") or a restriction name,
+     * so every modifier this mod adds can be found and removed again without bookkeeping.
+     */
     private static Identifier modifierId(Identifier effectId, String suffix) {
         return Identifier.fromNamespaceAndPath(Constants.MOD_ID,
                 "effect/" + effectId.getNamespace() + "/" + effectId.getPath() + "/" + suffix);
     }
 
+    /**
+     * (Re)writes every attribute modifier this effect owns, scaled to the current
+     * level/stacks. Safe to call repeatedly - each modifier is removed before being re-added.
+     */
     private static void applyModifiers(LivingEntity owner, EffectDefinition def,
                                        EffectInstance instance) {
         for (int i = 0; i < def.attributes().size(); i++) {
@@ -241,6 +282,11 @@ public final class EffectManager {
         });
     }
 
+    /**
+     * Implements "can't move" / "can't jump" by multiplying the relevant attribute by zero
+     * (a -1.0 ADD_MULTIPLIED_TOTAL modifier). Attack and item restrictions have no attribute
+     * to hang off and are enforced by callers through {@link #isRestricted}.
+     */
     private static void applyRestrictionModifier(LivingEntity owner, Identifier effectId,
                                                  String suffix, Holder<Attribute> attribute,
                                                  boolean active) {
@@ -254,6 +300,7 @@ public final class EffectManager {
         }
     }
 
+    /** Strips every modifier this effect could have added, including the restriction ones. */
     private static void removeModifiers(LivingEntity owner, EffectDefinition def,
                                         Identifier effectId) {
         for (int i = 0; i < def.attributes().size(); i++) {
@@ -268,6 +315,7 @@ public final class EffectManager {
         }
     }
 
+    /** @return the owner's instance of that attribute, or null if unknown/not applicable. */
     @Nullable
     private static AttributeInstance resolve(LivingEntity owner, Identifier attributeId) {
         Holder<Attribute> holder = BuiltInRegistries.ATTRIBUTE.get(attributeId).orElse(null);
@@ -278,6 +326,7 @@ public final class EffectManager {
         return owner.getAttribute(holder);
     }
 
+    /** Maps the JSON operation string (both spellings) to the vanilla enum. */
     private static AttributeModifier.Operation mapOperation(String operation) {
         return switch (operation) {
             case "add_multiplied_base", "multiply_base" -> AttributeModifier.Operation.ADD_MULTIPLIED_BASE;
@@ -288,6 +337,7 @@ public final class EffectManager {
 
     // ------------------------------------------------------------ helpers
 
+    /** Logical AND over an effect rule's conditions. */
     private static boolean allPass(List<RpgCondition> conditions, LivingEntity owner) {
         ServerPlayer player = owner instanceof ServerPlayer p ? p : null;
         RpgCondition.ConditionContext ctx = new RpgCondition.ConditionContext(owner, player, null);
@@ -297,6 +347,7 @@ public final class EffectManager {
         return true;
     }
 
+    /** Runs a lifecycle/rule action list against the owner. */
     private static void runActions(LivingEntity owner, List<RpgAction> actions) {
         if (actions.isEmpty()) return;
         ServerPlayer player = owner instanceof ServerPlayer p ? p : null;
@@ -306,11 +357,17 @@ public final class EffectManager {
         }
     }
 
+    /**
+     * Flags a player's effects for saving and for the next client sync.
+     * Non-player entities save with their own NBT and have no HUD, so they need neither.
+     */
     private static void dirty(LivingEntity owner) {
         if (owner instanceof ServerPlayer player) {
             PlayerEffects.markDirty(player);
+            EffectSync.mark(player);
         }
     }
 
+    /** Static-only gateway: never instantiated. */
     private EffectManager() {}
 }

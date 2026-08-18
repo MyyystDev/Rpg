@@ -16,6 +16,23 @@ import java.util.Optional;
  * only value/range/stages/rules/display. Full schema per the custom-stats
  * design doc; engine support arrives in stages, but files against this
  * schema are forever-valid.
+ *
+ * <p>This record is the parsed form of one file in {@code data/&lt;ns&gt;/myrpg/stats/&lt;name&gt;.json}.
+ * The pieces fit together like this:</p>
+ * <ul>
+ *   <li>{@link ValueConfig} - the number itself: range, rounding, clamping.</li>
+ *   <li>{@link Stage} - named bands over that range ("low", "high"); crossing a band
+ *       boundary applies/removes {@link StageEffect}s and fires on_enter / on_exit actions.</li>
+ *   <li>{@link Rule} - trigger + conditions + actions, evaluated by {@code StatEngine}.</li>
+ *   <li>{@link Persistence} / {@link Hud} - how the value survives death and how it is drawn.</li>
+ * </ul>
+ *
+ * @param display     optional label/icon/colour shown in HUD and editor
+ * @param value       numeric configuration; defaults to a clamped 0..100 integer stat
+ * @param persistence death/respawn behaviour; absent means "use the defaults"
+ * @param stages      value bands, checked in declaration order (first match wins)
+ * @param rules       event-driven reactions belonging to this stat
+ * @param hud         on-screen rendering options
  */
 public record StatDef(
         Optional<Display> display,
@@ -36,6 +53,11 @@ public record StatDef(
 
     // ------------------------------------------------------------ display
 
+    /**
+     * Presentation only - never affects gameplay.
+     * {@code name}/{@code description} accept either literal text or a translation key
+     * (resolved by {@code TextResolver}).
+     */
     public record Display(
             Optional<String> name,
             Optional<String> description,
@@ -52,6 +74,18 @@ public record StatDef(
 
     // ------------------------------------------------------------ value
 
+    /**
+     * How the raw number behaves.
+     *
+     * @param type         "stored" (persisted per entity) or "computed" (derived from
+     *                     {@code expression}; the expression engine is not wired up yet)
+     * @param defaultValue value returned before anything has been written
+     * @param min          lower bound, applied when {@code clamp} is true
+     * @param max          upper bound, applied when {@code clamp} is true
+     * @param decimal      false rounds every write to a whole number
+     * @param clamp        false lets the value leave the min/max range
+     * @param expression   formula for computed stats only
+     */
     public record ValueConfig(
             String type,                      // "stored" | "computed"
             double defaultValue,
@@ -61,6 +95,7 @@ public record StatDef(
             boolean clamp,
             Optional<String> expression       // computed stats only
     ) {
+        /** Used when a stat file omits the whole "value" object: a clamped 0..100 integer. */
         public static final ValueConfig DEFAULT =
                 new ValueConfig("stored", 0, 0, 100, false, true, Optional.empty());
 
@@ -74,11 +109,16 @@ public record StatDef(
                 Codec.STRING.optionalFieldOf("expression").forGetter(ValueConfig::expression)
         ).apply(i, ValueConfig::new));
 
+        /** True for derived stats, which must not be written to directly. */
         public boolean isComputed() { return "computed".equals(type); }
     }
 
     // ------------------------------------------------------------ persistence
 
+    /**
+     * What happens to the value across death, respawn and dimension changes.
+     * Defaults keep the value through death and change nothing otherwise.
+     */
     public record Persistence(
             boolean keepOnDeath,
             boolean resetOnRespawn,
@@ -95,6 +135,17 @@ public record StatDef(
 
     // ------------------------------------------------------------ stages
 
+    /**
+     * A named band of the value range, e.g. rage 80..100 = "berserk".
+     *
+     * <p>Bounds are inclusive on both ends and are tested in file order, so the first
+     * matching stage wins - overlapping ranges are allowed but only the earlier one is used.
+     * A value outside every stage means "no stage".</p>
+     *
+     * @param effects continuous modifiers, applied on entry and removed on exit
+     * @param onEnter one-shot actions fired when crossing into this stage
+     * @param onExit  one-shot actions fired when leaving it
+     */
     public record Stage(
             String id,
             double min,
@@ -117,6 +168,12 @@ public record StatDef(
 
     // ------------------------------------------------------------ rules
 
+    /**
+     * "When X happens, if Y holds, do Z" - the data-driven reaction attached to a stat.
+     * Evaluated by {@code StatEngine} whenever a matching game event fires.
+     *
+     * @param conditions all must pass (logical AND); an empty list always passes
+     */
     public record Rule(
             RpgTrigger trigger,
             List<RpgCondition> conditions,    // AND
@@ -131,6 +188,12 @@ public record StatDef(
 
     // ------------------------------------------------------------ hud
 
+    /**
+     * On-screen display options, consumed by {@code StatHudOverlay} on the client.
+     *
+     * @param visibilityValue threshold used by the "above_value" / "below_value" modes
+     * @param showValue       draws the raw number on top of a bar
+     */
     public record Hud(
             boolean visible,
             String type,                      // bar | number | percentage | icons | hidden

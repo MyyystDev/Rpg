@@ -45,7 +45,14 @@
     }
   ],
   "combat": {
-    "type": "melee"
+    "type": "melee",
+    "on_hit": [
+      {
+        "effect": "mypack:bleeding",
+        "stacks": 1,
+        "chance": 0.5
+      }
+    ]
   },
   "loot": {
     "loot_table": "mypack:entities/berserker",

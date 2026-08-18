@@ -23,35 +23,54 @@ import java.util.Map;
  * Stage state is transient: recomputed from values on load via
  * reapplyStages(), which re-runs effect apply() idempotently (relog-safe)
  * WITHOUT firing on_enter events (crossing happened in the past).
+ *
+ * <p>One instance exists per player (kept by {@code PlayerStats}) and per RPG entity.
+ * It only stores numbers; the meaning of each number lives in the matching
+ * {@link StatDef} loaded from datapacks.</p>
  */
 public class StatStore {
 
+    /** Persisted shape: a plain map of stat id -> number. */
     private static final Codec<Map<Identifier, Double>> VALUES_CODEC =
             Codec.unboundedMap(Identifier.CODEC, Codec.DOUBLE);
 
+    /** Only explicitly written stats appear here; anything else falls back to the definition default. */
     private final Map<Identifier, Double> values = new HashMap<>();
+    /** stat id -> id of the stage it currently sits in. Derived state, never saved. */
     private final Map<Identifier, String> currentStages = new HashMap<>();   // transient
 
+    /** Stats changed since the last network sync; drained by {@code PlayerStatTicker}. */
     private final java.util.Set<Identifier> dirtySync = new java.util.HashSet<>();
 
     // ------------------------------------------------------------ reads
 
+    /** @return the stored value, or the definition's default (0 if the stat is unknown). */
     public double get(Identifier stat) {
         Double stored = values.get(stat);
         if (stored != null) return stored;
         return CoreData.STATS.get(stat).map(d -> d.value().defaultValue()).orElse(0.0);
     }
 
+    /** @return the id of the stage the stat is in, or null if it has no stages / sits outside them. */
     @Nullable
     public String currentStage(Identifier stat) {
         return currentStages.get(stat);
     }
 
+    /** Live view of every explicitly set stat. */
     public Map<Identifier, Double> all() { return values; }
+    /** True when nothing has been written yet - lets callers skip saving entirely. */
     public boolean isEmpty() { return values.isEmpty(); }
 
     // ------------------------------------------------------------ writes
 
+    /**
+     * Writes a value after applying the definition's clamp/rounding rules, then re-evaluates
+     * the stage - which may apply or remove effects and fire on_enter / on_exit actions.
+     *
+     * <p>Unknown stats are still stored (with a warning) so that a datapack reload which
+     * temporarily removes a definition does not silently destroy player data.</p>
+     */
     public void set(LivingEntity owner, Identifier stat, double value) {
         StatDef def = CoreData.STATS.get(stat).orElse(null);
         if (def == null) {
@@ -61,21 +80,28 @@ public class StatStore {
         }
         StatDef.ValueConfig cfg = def.value();
         if (cfg.clamp()) value = Mth.clamp(value, cfg.min(), cfg.max());
-        if (!cfg.decimal()) value = Math.rint(value);
+        if (!cfg.decimal()) value = Math.rint(value);   // integer stats round to nearest
 
-        dirtySync.add(stat);
+        dirtySync.add(stat);   // queue a client sync even if the number ends up unchanged
 
         double old = get(stat);
         values.put(stat, value);
         if (value != old) {
-            evaluateStage(owner, stat, def, true);
+            evaluateStage(owner, stat, def, true);   // may cross a stage boundary
         }
     }
 
+    /** Convenience for relative changes; goes through {@link #set} so clamping still applies. */
     public void add(LivingEntity owner, Identifier stat, double delta) {
         set(owner, stat, get(stat) + delta);
     }
 
+    /**
+     * Applies a datapack-named arithmetic operation.
+     *
+     * @param operation "add", "subtract", "multiply", "divide" or anything else for "set"
+     *                  (division by zero is ignored and leaves the value untouched)
+     */
     public void modify(LivingEntity owner, Identifier stat, String operation, double operand) {
         double current = get(stat);
         double result = switch (operation) {
@@ -88,6 +114,10 @@ public class StatStore {
         set(owner, stat, result);
     }
 
+    /**
+     * Drops every value and stage. Note this does not remove effects that stages had applied -
+     * callers that need that must exit the stages first.
+     */
     public void clear() {
         values.clear();
         currentStages.clear();
@@ -103,6 +133,7 @@ public class StatStore {
         if (def.stages().isEmpty()) return;
         double value = get(statId);
 
+        // First stage whose inclusive range contains the value wins; null = between stages.
         StatDef.Stage newStage = null;
         for (StatDef.Stage stage : def.stages()) {
             if (value >= stage.min() && value <= stage.max()) {
@@ -150,6 +181,7 @@ public class StatStore {
         }
     }
 
+    /** Looks a stage up by its string id; null when a datapack reload removed it. */
     static StatDef.@Nullable Stage stageById(StatDef def, String id) {
         for (StatDef.Stage stage : def.stages()) {
             if (stage.id().equals(id)) return stage;
@@ -157,6 +189,10 @@ public class StatStore {
         return null;
     }
 
+    /**
+     * Runs stage on_enter/on_exit actions against the owner.
+     * Players are passed as both source and target so player-only actions still work.
+     */
     private static void runActions(LivingEntity owner, java.util.List<RpgAction> actions) {
         RpgAction.ActionContext ctx = owner instanceof net.minecraft.server.level.ServerPlayer player
                 ? RpgAction.ActionContext.of(player, player)
@@ -168,6 +204,7 @@ public class StatStore {
 
     // ------------------------------------------------------------ persistence
 
+    /** Writes the values under {@code key}; writes nothing at all when empty, to keep NBT small. */
     public void save(ValueOutput output, String key) {
         if (values.isEmpty()) return;
         output.store(key, VALUES_CODEC, Map.copyOf(values));
@@ -180,6 +217,10 @@ public class StatStore {
         input.read(key, VALUES_CODEC).ifPresent(values::putAll);
     }
 
+    /**
+     * Returns the stats changed since the previous call and clears the pending set,
+     * so each change is synced to the client exactly once.
+     */
     public java.util.Set<Identifier> drainDirty() {
         if (dirtySync.isEmpty()) return java.util.Set.of();
         var out = java.util.Set.copyOf(dirtySync);

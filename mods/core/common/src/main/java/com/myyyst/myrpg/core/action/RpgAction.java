@@ -23,16 +23,41 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.LivingEntity;
 import org.jspecify.annotations.Nullable;
 
+/**
+ * The "do something" half of the data-driven rule system - the counterpart to
+ * {@code RpgCondition}.
+ *
+ * <p>Actions appear in datapacks as a typed object and are run by the rule engines
+ * (stat rules, stage on_enter/on_exit, effect events, entity rules):</p>
+ *
+ * <pre>{@code { "type": "myrpg_core:damage", "amount": 2.0 } }</pre>
+ *
+ * <p>Every action is server side and must fail softly: an unknown sound, effect or
+ * function is logged and skipped rather than thrown, so one typo in a pack cannot
+ * break the rule chain around it.</p>
+ *
+ * <p>Other mods can add their own types by registering into {@link #REGISTRY}.</p>
+ */
 public interface RpgAction {
 
+    /** Performs the action. Called on the server thread; implementations must not block. */
     void execute(ActionContext ctx);
 
+    /** The codec this instance was registered with; used when writing back to JSON. */
     MapCodec<? extends RpgAction> codec();
 
+    /**
+     * Who the action operates on.
+     *
+     * @param self   the entity the rule belongs to - the default subject of most actions
+     * @param player the player involved, if any; player-scoped actions no-op without it
+     */
     record ActionContext(LivingEntity self, @Nullable ServerPlayer player) {
+        /** Context for a non-player entity. */
         public static ActionContext of(LivingEntity self) {
             return new ActionContext(self, null);
         }
+        /** Context where a player is involved (usually self == player). */
         public static ActionContext of(LivingEntity self, ServerPlayer player) {
             return new ActionContext(self, player);
         }
@@ -40,7 +65,9 @@ public interface RpgAction {
 
     // ---------------------------------------------------------------- registry
 
+    /** Type registry; addons register extra action types here. */
     DispatchRegistry<RpgAction> REGISTRY = new DispatchRegistry<>(RpgAction::codec);
+    /** Polymorphic codec used wherever a datapack lists actions. */
     Codec<RpgAction> CODEC = REGISTRY.codec();
 
     /** Core's builtins only. Called once from RpgCore.init(). */
@@ -55,12 +82,18 @@ public interface RpgAction {
         REGISTRY.register(core("modify_variable"), ModifyVariable.CODEC);
     }
 
+    /** Shorthand for an id in this mod's namespace. */
     private static Identifier core(String path) {
         return Identifier.fromNamespaceAndPath(Constants.MOD_ID, path);
     }
 
     // ---------------------------------------------------------------- builtins
 
+    /**
+     * Runs a vanilla datapack function ({@code data/&lt;ns&gt;/function/...}) with the entity
+     * as {@code @s} and its position as the execution position. Command output is suppressed
+     * so rules firing every tick do not spam the chat/log.
+     */
     record RunFunction(Identifier function) implements RpgAction {
         static final MapCodec<RunFunction> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Identifier.CODEC.fieldOf("function").forGetter(RunFunction::function)
@@ -81,6 +114,7 @@ public interface RpgAction {
         @Override public MapCodec<? extends RpgAction> codec() { return CODEC; }
     }
 
+    /** Plays a sound at the entity's block position for everyone in earshot. */
     record PlaySound(Identifier sound, float volume, float pitch) implements RpgAction {
         static final MapCodec<PlaySound> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Identifier.CODEC.fieldOf("sound").forGetter(PlaySound::sound),
@@ -110,10 +144,12 @@ public interface RpgAction {
         @Override public void execute(ActionContext ctx) {
             LivingEntity self = ctx.self();
             if (!(self.level() instanceof ServerLevel level)) return;
+            // Rendered as "<EntityName> message", like a player chat line.
             Component line = Component.empty()
                     .append("<").append(self.getDisplayName()).append("> ")
                     .append(TextResolver.resolve(text));
             for (ServerPlayer player : level.players()) {
+                // squared compare avoids a sqrt per player per line
                 if (player.distanceToSqr(self) <= range * range) {
                     player.sendSystemMessage(line);
                 }
@@ -171,10 +207,10 @@ public interface RpgAction {
         // ModifyStat.execute:
         @Override public void execute(ActionContext ctx) {
             StatStore store = StatHolder.resolve(ctx.self());
-            if (store == null) return;
+            if (store == null) return;   // entity has no stats (plain vanilla mob)
             store.modify(ctx.self(), stat, operation, value);
             if (ctx.self() instanceof ServerPlayer player) {
-                PlayerStats.markDirty(player);
+                PlayerStats.markDirty(player);   // player stores are world-saved, flag for write
             }
         }
         @Override public MapCodec<? extends RpgAction> codec() { return CODEC; }
@@ -215,11 +251,12 @@ public interface RpgAction {
 
         @Override public void execute(ActionContext ctx) {
             var current = Variables.get(ctx.self().level(), scope, name, ctx.player());
+            // Refuse to do arithmetic on a string variable rather than silently overwriting it.
             if (current.isPresent() && !current.get().isNumber()) {
                 Constants.LOG.warn("[myrpg] modify_variable on non-numeric variable '{}'", name);
                 return;
             }
-            double base = current.map(VarValue::asNumber).orElse(defaultValue);
+            double base = current.map(VarValue::asNumber).orElse(defaultValue);   // unset -> "default"
             double result = switch (operation) {
                 case "subtract" -> base - value;
                 case "multiply" -> base * value;

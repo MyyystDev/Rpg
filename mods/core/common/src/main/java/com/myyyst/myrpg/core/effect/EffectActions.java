@@ -29,6 +29,7 @@ public final class EffectActions {
         register("clear_effects", ClearEffects.CODEC);
     }
 
+    /** Registers one action type under {@code myrpg_core:<path>}. */
     private static void register(String path, MapCodec<? extends RpgAction> codec) {
         RpgAction.REGISTRY.register(
                 Identifier.fromNamespaceAndPath(Constants.MOD_ID, path), codec);
@@ -52,6 +53,7 @@ public final class EffectActions {
 
         @Override public void execute(ActionContext ctx) {
             LivingEntity self = ctx.self();
+            // The context player (if any) is recorded as the source, for attribution.
             EffectManager.apply(self, effect, duration, level, stacks,
                     ctx.player() != null ? ctx.player().getUUID() : null);
         }
@@ -66,6 +68,7 @@ public final class EffectActions {
         ).apply(i, RemoveRpgEffect::new));
 
         @Override public void execute(ActionContext ctx) {
+            // expired=false -> this counts as a cleanse and fires on_removed, not on_expired
             EffectManager.remove(ctx.self(), effect, false);
         }
 
@@ -80,6 +83,8 @@ public final class EffectActions {
         ).apply(i, AddEffectStack::new));
 
         @Override public void execute(ActionContext ctx) {
+            // Re-applying with extra stacks is how stacking is expressed; -1 keeps the
+            // definition's default duration.
             EffectManager.apply(ctx.self(), effect, -1, 1, Math.max(1, count), null);
         }
 
@@ -143,5 +148,6 @@ public final class EffectActions {
         @Override public MapCodec<? extends RpgAction> codec() { return CODEC; }
     }
 
+    /** Namespace class for the effect action records: never instantiated. */
     private EffectActions() {}
 }

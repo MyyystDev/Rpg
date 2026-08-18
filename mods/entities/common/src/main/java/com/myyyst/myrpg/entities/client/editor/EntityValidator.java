@@ -16,10 +16,19 @@ import java.util.List;
  */
 public final class EntityValidator {
 
+    /** ERROR blocks a save; WARN is a hint the author may deliberately ignore. */
     public enum Level { ERROR, WARN }
 
+    /** One problem found, ready to display. */
     public record Issue(Level level, String message) {}
 
+    /**
+     * Runs every check and returns the issues found. Never throws.
+     *
+     * <p>Unlike the stat validator, this one can check against the game's own registries -
+     * items, attributes, models - so it catches broken references before they reach the
+     * server. Unknown goal or model types are only warnings, since an addon may provide them.</p>
+     */
     public static List<Issue> validate(EntityWorkingSet.Entry entry) {
         List<Issue> issues = new ArrayList<>();
         JsonObject json = entry.json;
@@ -112,6 +121,7 @@ public final class EntityValidator {
         return issues;
     }
 
+    /** True if the id names a real item. AIR counts as "not found" (it is the miss result). */
     public static boolean itemExists(String rawId) {
         Identifier id = Identifier.tryParse(rawId);
         if (id == null) return false;
@@ -119,9 +129,11 @@ public final class EntityValidator {
         return item != null && item != Items.AIR;
     }
 
+    /** True if any issue is an ERROR - the editor uses this to block saving. */
     public static boolean hasErrors(List<Issue> issues) {
         return issues.stream().anyMatch(i -> i.level() == Level.ERROR);
     }
 
+    /** Static-only validator: never instantiated. */
     private EntityValidator() {}
 }

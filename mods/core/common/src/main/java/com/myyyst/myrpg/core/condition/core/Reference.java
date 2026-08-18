@@ -19,7 +19,12 @@ public record Reference(Identifier id) implements RpgCondition {
             Identifier.CODEC.fieldOf("id").forGetter(Reference::id)
     ).apply(i, Reference::new));
 
+    /** Deepest chain of references allowed before the guard trips. */
     private static final int MAX_DEPTH = 16;
+    /**
+     * Current nesting depth. ThreadLocal because conditions can be evaluated from the
+     * server thread and from command threads at the same time, and each needs its own count.
+     */
     private static final ThreadLocal<Integer> DEPTH = ThreadLocal.withInitial(() -> 0);
 
     @Override
@@ -38,7 +43,7 @@ public record Reference(Identifier id) implements RpgCondition {
         try {
             return resolved.test(ctx);
         } finally {
-            DEPTH.set(depth);
+            DEPTH.set(depth);   // restore even if the nested condition threw
         }
     }
 

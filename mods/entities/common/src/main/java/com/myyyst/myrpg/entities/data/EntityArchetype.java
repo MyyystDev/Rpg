@@ -7,6 +7,13 @@ import net.minecraft.resources.Identifier;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * A lightweight, component-shaped alternative to {@link EntityDefinition}: just a name and
+ * a block of stats.
+ *
+ * <p>Nothing loads these yet - {@code EntitiesData} only registers full entity definitions -
+ * so this is scaffolding for a future archetype/component system rather than live content.</p>
+ */
 public record EntityArchetype(
         Optional<String> displayName,
         Optional<StatsComponent> stats
@@ -16,6 +23,7 @@ public record EntityArchetype(
             StatsComponent.CODEC.optionalFieldOf("stats").forGetter(EntityArchetype::stats)
     ).apply(i, EntityArchetype::new));
 
+    /** The three common vanilla attributes called out by name, plus arbitrary custom stats. */
     public record StatsComponent(
             Optional<Double> maxHealth,
             Optional<Double> movementSpeed,

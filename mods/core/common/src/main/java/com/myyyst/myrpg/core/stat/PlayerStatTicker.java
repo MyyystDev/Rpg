@@ -3,6 +3,7 @@ package com.myyyst.myrpg.core.stat;
 import com.myyyst.myrpg.core.data.CoreData;
 import com.myyyst.myrpg.core.data.StatDef;
 import com.myyyst.myrpg.core.effect.EffectManager;
+import com.myyyst.myrpg.core.effect.EffectSync;
 import com.myyyst.myrpg.core.effect.PlayerEffects;
 import com.myyyst.myrpg.core.network.RpgPayloads;
 import com.myyyst.myrpg.core.platform.Services;
@@ -13,18 +14,34 @@ import net.minecraft.server.level.ServerPlayer;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Drives StatEngine for all online players; called by loader tick hooks. */
+/**
+ * Drives StatEngine for all online players; called by loader tick hooks.
+ *
+ * <p>This is the server-side heartbeat of the mod. Besides ticking, it owns the three
+ * lifecycle moments where state has to be rebuilt or pushed to the client:
+ * {@link #onJoin}, {@link #onRespawn} and the per-tick delta sync.</p>
+ *
+ * <p>Only stats with a visible HUD config are sent to clients - the client never needs
+ * to know about purely server-side bookkeeping stats.</p>
+ */
 public final class PlayerStatTicker {
 
+    /** One server tick: rules, dirty-stat sync, custom effects, effect sync. */
     public static void tick(MinecraftServer server) {
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
             StatStore store = PlayerStats.get(player);
             StatEngine.tick(store, player);
             syncDirty(player, store);
             EffectManager.tick(PlayerEffects.get(player), player);
+            EffectSync.flush(player);
         }
     }
 
+    /**
+     * Applies each stat's {@code persistence} block after a death.
+     * A stat is reset to its default when it is not kept on death, or when it is explicitly
+     * marked reset_on_respawn; everything else carries over untouched.
+     */
     // in PlayerStatTicker or a new PersistenceRules:
     public static void onRespawn(ServerPlayer player) {
         StatStore store = PlayerStats.get(player);
@@ -36,12 +53,16 @@ public final class PlayerStatTicker {
                         }
                     }));
         }
+        // The respawned entity is a fresh object, so stage effects (attribute modifiers,
+        // custom effects) have to be re-applied to it from scratch.
         store.reapplyStages(player);
         EffectManager.reapplyAll(player);
+        EffectSync.send(player);
         PlayerStats.markDirty(player);
         syncFull(player, store);
     }
 
+    /** Sends every HUD-visible stat, used when the client has no state yet (join/respawn). */
     private static void syncFull(ServerPlayer player, StatStore store) {
         List<RpgPayloads.StatEntry> entries = new ArrayList<>();
         for (var e : CoreData.STATS.all().entrySet()) {
@@ -59,9 +80,11 @@ public final class PlayerStatTicker {
         StatStore store = PlayerStats.get(player);
         store.reapplyStages(player);
         EffectManager.reapplyAll(player);
+        EffectSync.send(player);
         syncFull(player, store);
     }
 
+    /** Sends only the stats that changed this tick; sends nothing when nothing changed. */
     private static void syncDirty(ServerPlayer player, StatStore store) {
         var dirty = store.drainDirty();
         if (dirty.isEmpty()) return;
@@ -76,6 +99,11 @@ public final class PlayerStatTicker {
         }
     }
 
+    /**
+     * Flattens a definition plus its current value into the wire record the HUD needs,
+     * so the client never has to load datapack files itself. Missing display fields fall
+     * back to the stat's path, white, and no icon.
+     */
     private static RpgPayloads.StatEntry entry(Identifier statId, double value,
                                                StatDef def, StatDef.Hud hud) {
         String name = def.display().flatMap(StatDef.Display::name).orElse(statId.getPath());
@@ -90,5 +118,6 @@ public final class PlayerStatTicker {
 
 
 
+    /** Static-only helper: never instantiated. */
     private PlayerStatTicker() {}
 }

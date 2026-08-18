@@ -9,16 +9,25 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
-/** Page 4: name (auto-generates ID until manually edited), template, range. */
+/**
+ * Page 4: name (auto-generates ID until manually edited), template, range.
+ *
+ * <p>The "new stat" dialog. It builds the initial JSON from a {@link StatTemplates} preset,
+ * sends it straight to the server, and adds the entry to the library's working set - the
+ * full editor is then opened separately for any deeper configuration.</p>
+ */
 public class CreateStatScreen extends Screen {
 
     private static final Gson GSON = new Gson();
 
     private final StatLibraryScreen parent;
+    /** Used to reject an id that already exists. */
     private final StatWorkingSet workingSet;
     private EditBox nameBox, idBox, minBox, maxBox, defaultBox;
+    /** Once the user types in the id box, the name no longer overwrites it. */
     private boolean idManuallyEdited;
     private int template;   // StatTemplates ordinal
+    /** Panel geometry, recomputed in init(). */
     private int px, py, pw, ph;
 
     public CreateStatScreen(StatLibraryScreen parent, StatWorkingSet workingSet) {
@@ -43,6 +52,8 @@ public class CreateStatScreen extends Screen {
         defaultBox = box(fx + 128, py + 150, 56, "0");
         applyTemplate();
 
+        // Typing a name derives a legal id ("Corruption" -> "mypack:corruption") until the
+        // user edits the id themselves, at which point the derivation stops.
         nameBox.setResponder(name -> {
             if (!idManuallyEdited) {
                 idBox.setValue("mypack:" + name.toLowerCase().replaceAll("[^a-z0-9_]", "_"));
@@ -54,6 +65,7 @@ public class CreateStatScreen extends Screen {
         // NOTE drift: setResponder/isFocused spellings per old dialogs.
     }
 
+    /** Creates a hinted text field and registers it as a widget. */
     private EditBox box(int x, int y, int w, String hint) {
         EditBox b = new EditBox(font, x, y, w, 18, Component.empty());
         b.setHint(Component.literal(hint));
@@ -61,6 +73,7 @@ public class CreateStatScreen extends Screen {
         return b;
     }
 
+    /** Copies the selected template's range into the three number fields. */
     private void applyTemplate() {
         StatTemplates t = StatTemplates.values()[template];
         minBox.setValue(trim(t.min));
@@ -112,6 +125,7 @@ public class CreateStatScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, delta);
     }
 
+    /** Greedy word wrap for the template description; good enough for a fixed-width panel. */
     private void drawWrapped(GuiGraphicsExtractor g, String text, int x, int y, int w) {
         // crude wrap: split on spaces into lines fitting w
         StringBuilder line = new StringBuilder();
@@ -134,6 +148,8 @@ public class CreateStatScreen extends Screen {
         double mx = event.x(), my = event.y();
         int fx = px + PanelStyle.GRID * 2;
 
+        // The template control is a cycle button: each click advances to the next preset
+        // and refills the range fields.
         if (PanelStyle.hit(mx, my, fx, py + 126, pw / 2 - PanelStyle.GRID * 3, PanelStyle.CONTROL_H)) {
             template = (template + 1) % StatTemplates.values().length;
             applyTemplate();
@@ -150,6 +166,11 @@ public class CreateStatScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /**
+     * Builds the stat from the template, saves it, and adds it to the library.
+     * The save goes to the server immediately, so the new stat exists as a real datapack
+     * file even if the editor is closed straight afterwards.
+     */
     private void create() {
         String statId = idBox.getValue().trim();
         if (!statId.contains(":") || workingSet.entries.stream().anyMatch(e -> e.statId.equals(statId))) {
@@ -166,10 +187,12 @@ public class CreateStatScreen extends Screen {
         Minecraft.getInstance().gui.setScreen(parent);
     }
 
+    /** Lenient number parse: anything unreadable falls back to the template's value. */
     private static double parse(String s, double fallback) {
         try { return Double.parseDouble(s.trim()); } catch (Exception e) { return fallback; }
     }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() { return false; }
 }

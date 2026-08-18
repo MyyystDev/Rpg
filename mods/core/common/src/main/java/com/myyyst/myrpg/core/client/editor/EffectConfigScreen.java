@@ -12,16 +12,32 @@ import org.jspecify.annotations.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Schema-driven form for one effect. existing == null → add mode. */
+/**
+ * Schema-driven form for one effect. existing == null → add mode.
+ *
+ * <p>Nothing about this screen is specific to a particular effect type: it walks the
+ * {@link EffectSchemas.EffectSchema} it was handed, creates one control per field, and
+ * writes the values back under those keys. Adding a new stage-effect type therefore needs
+ * a schema entry, not a new screen.</p>
+ *
+ * <p>In edit mode it mutates the {@code existing} object in place, so the change is already
+ * part of the stage; in add mode the new object is appended on confirm.</p>
+ */
 public class EffectConfigScreen extends Screen {
 
     private final StatEditorScreen parent;
+    /** Stage that owns the effect list; only touched in add mode. */
     private final JsonObject stage;
+    /** Describes the fields to render. */
     private final EffectSchemas.EffectSchema schema;
+    /** The effect being edited, or null when adding a new one. */
     @Nullable private final JsonObject existing;
 
+    /** Text/number controls, keyed by their JSON key. */
     private final Map<String, EditBox> boxes = new HashMap<>();
+    /** Current index into {@code options} for each CYCLE field. */
     private final Map<String, Integer> cycles = new HashMap<>();
+    /** Panel geometry; the height grows with the number of fields. */
     private int px, py, pw, ph;
 
     public EffectConfigScreen(StatEditorScreen parent, JsonObject stage,
@@ -33,15 +49,18 @@ public class EffectConfigScreen extends Screen {
         this.existing = existing;
     }
 
+    /** Builds one control per schema field, pre-filled from the existing object if any. */
     @Override
     protected void init() {
         pw = 280;
-        ph = 90 + schema.fields().size() * 40;
+        ph = 90 + schema.fields().size() * 40;   // header + fields + button strip
         px = (width - pw) / 2; py = (height - ph) / 2;
 
         int fy = py + 40;
         for (var field : schema.fields()) {
             if (field.type() == EffectSchemas.FieldType.CYCLE) {
+                // Cycles are not widgets: only the selected index is kept, and clicking
+                // the button advances it.
                 int idx = 0;
                 if (existing != null && existing.has(field.key())) {
                     String current = existing.get(field.key()).getAsString();
@@ -116,13 +135,20 @@ public class EffectConfigScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /**
+     * Writes the form back into the JSON and returns to the parent screen.
+     * In add mode the effect is appended to the stage's "effects" array, creating it
+     * if this is the stage's first effect.
+     */
     private void apply() {
         JsonObject effect = existing != null ? existing : new JsonObject();
-        effect.addProperty("type", schema.typeId());
+        effect.addProperty("type", schema.typeId());   // the dispatch key the codec reads
         for (var field : schema.fields()) {
             switch (field.type()) {
                 case CYCLE -> effect.addProperty(field.key(), field.options()[cycles.get(field.key())]);
                 case NUMBER -> {
+                    // An unparseable number leaves the previous value in place rather than
+                    // writing something the codec would reject.
                     try {
                         effect.addProperty(field.key(), Double.parseDouble(boxes.get(field.key()).getValue().trim()));
                     } catch (NumberFormatException ignored) { }
@@ -134,10 +160,11 @@ public class EffectConfigScreen extends Screen {
             if (!stage.has("effects")) stage.add("effects", new com.google.gson.JsonArray());
             stage.getAsJsonArray("effects").add(effect);
         }
-        parent.markDirtyFromChild();
+        parent.markDirtyFromChild();   // the parent owns the dirty flag and the save button
         Minecraft.getInstance().gui.setScreen(parent);
     }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() { return false; }
 }

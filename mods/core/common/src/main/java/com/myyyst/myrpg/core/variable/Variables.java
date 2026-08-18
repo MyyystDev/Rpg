@@ -21,14 +21,29 @@ import java.util.UUID;
  * Variable storage: world-scoped (shared) and player-scoped (per UUID).
  * Party scope arrives with the party system; the scope strings in
  * conditions/actions already reserve it.
+ *
+ * <p>These are the free-form flags and counters datapacks use to remember state
+ * ("quest_stage", "boss_defeated"). They are read by {@code VariableConditions} and written
+ * by {@code RpgAction.SetVariable}, and persist with the world through {@link SavedData}.</p>
+ *
+ * <p>Server side only: all data lives in the overworld's saved-data storage.</p>
  */
 public class Variables extends SavedData {
 
+    /** Global variables, shared by everyone on the server. */
     private final Map<String, VarValue> world = new HashMap<>();
+    /** Per-player variables, keyed by player UUID so they survive name changes. */
     private final Map<UUID, Map<String, VarValue>> players = new HashMap<>();
 
     // ------------------------------------------------------------ access
 
+    /**
+     * Reads a variable.
+     *
+     * @param scope  "world" or "player"
+     * @param player required for "player" scope, may be null otherwise
+     * @return empty when unset, when the scope is unknown, or when player scope has no player
+     */
     public static Optional<VarValue> get(Level level, String scope, String name,
                                          @Nullable ServerPlayer player) {
         Variables data = getData(level);
@@ -43,6 +58,11 @@ public class Variables extends SavedData {
         };
     }
 
+    /**
+     * Writes a variable and flags the saved data dirty so it gets written to disk.
+     * Unknown scopes are logged and ignored rather than throwing, so one bad datapack
+     * entry cannot break a whole rule chain.
+     */
     public static void set(Level level, String scope, String name,
                            @Nullable ServerPlayer player, VarValue value) {
         Variables data = getData(level);
@@ -60,6 +80,7 @@ public class Variables extends SavedData {
         data.setDirty();
     }
 
+    /** Deletes a variable; a missing name (or missing player) is a no-op. */
     public static void remove(Level level, String scope, String name, @Nullable ServerPlayer player) {
         Variables data = getData(level);
         switch (scope) {
@@ -74,6 +95,10 @@ public class Variables extends SavedData {
         data.setDirty();
     }
 
+    /**
+     * Fetches (or creates on first use) the single Variables instance for this server.
+     * Always anchored to the overworld so that variables are global rather than per-dimension.
+     */
     private static Variables getData(Level level) {
         ServerLevel overworld = level.getServer().overworld();
         return overworld.getDataStorage().computeIfAbsent(TYPE);
@@ -82,9 +107,15 @@ public class Variables extends SavedData {
 
     // ------------------------------------------------------------ persistence
 
+    /** One scope's contents: name -> value. */
     private static final Codec<Map<String, VarValue>> SCOPE_CODEC =
             Codec.unboundedMap(Codec.STRING, VarValue.CODEC);
 
+    /**
+     * On-disk shape: {@code {"world": {...}, "players": {"<uuid>": {...}}}}.
+     * The getters hand out defensive copies because the codec may run while the game
+     * is still mutating the live maps.
+     */
     private static final Codec<Variables> CODEC = RecordCodecBuilder.create(i -> i.group(
             SCOPE_CODEC.optionalFieldOf("world", Map.of()).forGetter(d -> Map.copyOf(d.world)),
             Codec.unboundedMap(UUIDUtil.STRING_CODEC, SCOPE_CODEC)   // or UUID_STRING
@@ -95,6 +126,7 @@ public class Variables extends SavedData {
                     })
     ).apply(i, Variables::fromMaps));
 
+    /** Rebuilds a mutable instance from the immutable maps produced when loading. */
     private static Variables fromMaps(Map<String, VarValue> world,
                                       Map<UUID, Map<String, VarValue>> players) {
         Variables data = new Variables();
@@ -103,6 +135,7 @@ public class Variables extends SavedData {
         return data;
     }
 
+    /** Registration handle: file name "myrpg_core/variables.dat", factory, codec, no data-fixer. */
     public static final SavedDataType<Variables> TYPE = new SavedDataType<>(
             Identifier.fromNamespaceAndPath(Constants.MOD_ID, "variables"),
             Variables::new,

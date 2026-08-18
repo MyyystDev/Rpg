@@ -23,11 +23,13 @@ public record RandomChance(double chance, boolean perPlayerSeed, long seedSalt) 
     @Override
     public boolean test(ConditionContext ctx) {
         if (perPlayerSeed) {
-            if (ctx.player() == null) return false;
+            if (ctx.player() == null) return false;   // stable-per-player needs a player
+            // Seed derived from the UUID: same player + same salt = same answer forever.
+            // Vary seed_salt to get an independent draw for a different question.
             long seed = ctx.player().getUUID().getLeastSignificantBits() ^ seedSalt;
             return new Random(seed).nextDouble() < chance;
         }
-        return ctx.self().getRandom().nextDouble() < chance;
+        return ctx.self().getRandom().nextDouble() < chance;   // fresh dice each evaluation
     }
 
     @Override public MapCodec<? extends RpgCondition> codec() { return CODEC; }

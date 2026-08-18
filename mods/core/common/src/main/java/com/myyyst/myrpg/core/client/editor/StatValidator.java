@@ -6,13 +6,26 @@ import com.google.gson.JsonObject;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Client-side validation of a working stat definition. */
+/**
+ * Client-side validation of a working stat definition.
+ *
+ * <p>Advisory only: the server re-validates through the real codec in {@code OverlaySaver},
+ * so this exists to give immediate feedback in the editor rather than to enforce anything.
+ * It catches the mistakes a codec cannot - a default outside its own range, overlapping
+ * stages, gaps in the stage timeline.</p>
+ */
 public final class StatValidator {
 
+    /** ERROR blocks a sensible save; WARNING is a hint the author may deliberately ignore. */
     public enum Level { ERROR, WARNING }
 
+    /**
+     * One problem found.
+     * @param page which editor tab to send the author to (GENERAL, VALUE, STAGES, ...)
+     */
     public record Issue(Level level, String page, String message, String detail) {}
 
+    /** Runs every check and returns the issues found, in page order. Never throws. */
     public static List<Issue> validate(String statId, JsonObject json) {
         List<Issue> issues = new ArrayList<>();
 
@@ -57,6 +70,8 @@ public final class StatValidator {
                 ids.add(id);
                 ranges.add(new double[]{sMin, sMax});
             }
+            // Sorting by lower bound turns overlap/gap detection into a single linear pass:
+            // each range only has to be compared with the one before it.
             ranges.sort((a, b) -> Double.compare(a[0], b[0]));
             for (int i = 1; i < ranges.size(); i++) {
                 if (ranges.get(i)[0] <= ranges.get(i - 1)[1]) {
@@ -67,6 +82,7 @@ public final class StatValidator {
                             "Gap in timeline", "no stage covers " + trim(ranges.get(i - 1)[1] + 1) + " - " + trim(ranges.get(i)[0] - 1)));
                 }
             }
+            // ...and one more check for the space between the stat's min and the first stage.
             if (!ranges.isEmpty() && ranges.get(0)[0] > min) {
                 issues.add(new Issue(Level.WARNING, "STAGES",
                         "Gap in timeline", "no stage covers " + trim(min) + " - " + trim(ranges.get(0)[0] - 1)));
@@ -102,6 +118,13 @@ public final class StatValidator {
         return issues;
     }
 
+    /**
+     * Warns about condition/action types the editor has no schema for.
+     *
+     * <p>Only a warning, never an error: a type registered by another mod - or written by
+     * hand - is perfectly valid at runtime, it simply cannot be edited through the form UI,
+     * and the editor preserves it untouched.</p>
+     */
     private static void checkTypes(List<Issue> issues, JsonObject rule, String key,
                                    java.util.Set<String> known, int ruleIndex) {
         if (!rule.has(key)) return;
@@ -116,9 +139,11 @@ public final class StatValidator {
         }
     }
 
+    /** Drops the ".0" from whole numbers in messages. */
     private static String trim(double d) {
         return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(d);
     }
 
+    /** Static-only validator: never instantiated. */
     private StatValidator() {}
 }

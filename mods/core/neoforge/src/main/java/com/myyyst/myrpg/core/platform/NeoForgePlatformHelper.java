@@ -4,6 +4,10 @@ import com.myyyst.myrpg.core.platform.services.IPlatformHelper;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLLoader;
 
+/**
+ * NeoForge implementation of {@code IPlatformHelper}.
+ * Registered via {@code META-INF/services} and loaded by {@code Services.PLATFORM}.
+ */
 public class NeoForgePlatformHelper implements IPlatformHelper {
 
     @Override

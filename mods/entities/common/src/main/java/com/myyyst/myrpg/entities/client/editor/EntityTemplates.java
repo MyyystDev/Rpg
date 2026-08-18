@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 /** Starter JSON per template — values only, never different Java classes. */
 public final class EntityTemplates {
 
+    /** Template names offered by the create dialog, in display order. */
     public static final String[] NAMES = {"BLANK", "NPC", "GUARD", "HOSTILE", "BOSS"};
 
     /** Human-readable component list shown in the create dialog preview. */
@@ -23,6 +24,11 @@ public final class EntityTemplates {
         };
     }
 
+    /**
+     * Builds the starting JSON for a template.
+     * Each one is a complete, working entity - a GUARD already has targeting, combat and
+     * gear - so a newly created definition can be spawned before any further editing.
+     */
     public static JsonObject build(String template, String displayName, String model) {
         JsonObject json = new JsonObject();
 
@@ -115,10 +121,12 @@ public final class EntityTemplates {
         return json;
     }
 
+    /** Shorthand for a minimal AI goal object: just a type and a priority. */
     private static JsonObject goal(String type, int priority) {
         return JsonParser.parseString(
                 "{\"type\":\"" + type + "\",\"priority\":" + priority + "}").getAsJsonObject();
     }
 
+    /** Static-only helper: never instantiated. */
     private EntityTemplates() {}
 }

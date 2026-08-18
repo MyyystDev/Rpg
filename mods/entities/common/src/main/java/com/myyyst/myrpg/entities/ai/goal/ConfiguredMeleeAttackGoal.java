@@ -3,13 +3,21 @@ package com.myyyst.myrpg.entities.ai.goal;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 
-/** Vanilla melee with a data-driven swing interval (combat.cooldown). */
+/**
+ * Vanilla melee with a data-driven swing interval (combat.cooldown).
+ *
+ * <p>Vanilla hard-codes its attack interval; this subclass reads it from the entity
+ * definition instead, and can optionally restrict itself to close quarters so a
+ * lower-priority ranged goal covers longer distances.</p>
+ */
 public class ConfiguredMeleeAttackGoal extends MeleeAttackGoal {
 
     private final PathfinderMob owner;
+    /** Ticks between swings, floored at 1. */
     private final int cooldown;
     private final double maxRangeSqr;   // 0 = melee at any distance
 
+    /** Melee at any distance, using only the configured cooldown. */
     public ConfiguredMeleeAttackGoal(PathfinderMob mob, double speedModifier,
                                      boolean followEvenIfNotSeen, int cooldown) {
         this(mob, speedModifier, followEvenIfNotSeen, cooldown, 0.0);
@@ -25,6 +33,7 @@ public class ConfiguredMeleeAttackGoal extends MeleeAttackGoal {
         this.maxRangeSqr = maxRange > 0 ? maxRange * maxRange : 0;
     }
 
+    /** True when unrestricted, or when the target is inside the close-quarters range. */
     private boolean inEngageRange() {
         if (maxRangeSqr <= 0) return true;
         var target = owner.getTarget();
@@ -41,6 +50,7 @@ public class ConfiguredMeleeAttackGoal extends MeleeAttackGoal {
         return inEngageRange() && super.canContinueToUse();
     }
 
+    /** The one behaviour change over vanilla: a configurable swing interval. */
     @Override
     protected int getAttackInterval() {
         return adjustedTickDelay(cooldown);

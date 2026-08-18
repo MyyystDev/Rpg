@@ -12,6 +12,16 @@ import java.util.Optional;
  * A creator-defined status effect (custom-status-effects-system doc).
  * The framework never knows what the effect MEANS — only category, tags,
  * duration, stacking, modifiers, restrictions, rules, events, display.
+ *
+ * <p>Parsed form of one file in {@code data/&lt;ns&gt;/myrpg/effects/&lt;name&gt;.json}. Applied
+ * instances are {@code EffectInstance}s held by an {@code EffectStore} and driven by
+ * {@code EffectManager}; this record is the immutable template they refer back to.</p>
+ *
+ * @param category    "beneficial" / "harmful" / "neutral" - used by cleanse-style actions
+ * @param tags        free-form labels datapacks can match on (e.g. "bleed", "control")
+ * @param attributes  vanilla attribute modifiers applied while the effect is active
+ * @param rules       reuses the stat Rule shape, so effects react to events too
+ * @param events      one-shot action lists fired at lifecycle moments
  */
 public record EffectDefinition(
         Optional<Display> display,
@@ -41,12 +51,14 @@ public record EffectDefinition(
             Persistence.CODEC.optionalFieldOf("persistence", Persistence.DEFAULT).forGetter(EffectDefinition::persistence)
     ).apply(i, EffectDefinition::new));
 
+    /** @return true if this effect carries {@code tag}; used for tag-based removal/immunity. */
     public boolean hasTag(String tag) {
         return tags.contains(tag);
     }
 
     // ------------------------------------------------------------ display
 
+    /** Name/description/icon/colour for the effect HUD and the editor. Purely cosmetic. */
     public record Display(Optional<String> name, Optional<String> description,
                           Optional<Identifier> icon, Optional<String> color) {
         public static final Codec<Display> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -59,7 +71,12 @@ public record EffectDefinition(
 
     // ------------------------------------------------------------ duration
 
-    /** type: "timed" | "infinite". Ticks. */
+    /**
+     * type: "timed" | "infinite". Ticks.
+     *
+     * @param defaultTicks used when the caller does not specify a duration (200 = 10s)
+     * @param maximumTicks cap for extend/refresh stacking; 0 means uncapped
+     */
     public record Duration(String type, int defaultTicks, int maximumTicks) {
         public static final Duration DEFAULT = new Duration("timed", 200, 0);
         public static final Codec<Duration> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -68,6 +85,7 @@ public record EffectDefinition(
                 Codec.INT.optionalFieldOf("maximum", 0).forGetter(Duration::maximumTicks)
         ).apply(i, Duration::new));
 
+        /** Infinite effects never tick down and must be removed explicitly. */
         public boolean infinite() { return "infinite".equals(type); }
 
         /** Clamps a requested duration to the configured maximum (0 = uncapped). */
@@ -78,7 +96,16 @@ public record EffectDefinition(
 
     // ------------------------------------------------------------ stacking
 
-    /** mode: replace | refresh | extend | stacks */
+    /**
+     * What happens when the effect is applied to someone who already has it.
+     *
+     * <ul>
+     *   <li>replace - drop the old instance, start over</li>
+     *   <li>refresh - keep it, reset the timer</li>
+     *   <li>extend  - add the new duration to the remaining one</li>
+     *   <li>stacks  - add a stack (up to {@code maxStacks}), scaling attribute modifiers</li>
+     * </ul>
+     */
     public record Stacking(String mode, int maxStacks, boolean refreshDuration) {
         public static final Stacking DEFAULT = new Stacking("refresh", 1, true);
         public static final Codec<Stacking> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -102,6 +129,7 @@ public record EffectDefinition(
                 Codec.DOUBLE.optionalFieldOf("value_per_level", 0.0).forGetter(AttrMod::valuePerLevel)
         ).apply(i, AttrMod::new));
 
+        /** Effective modifier amount for the given level and stack count. */
         public double total(int level, int stacks) {
             return value + valuePerStack * stacks + valuePerLevel * level;
         }
@@ -109,6 +137,10 @@ public record EffectDefinition(
 
     // ------------------------------------------------------------ restrictions
 
+    /**
+     * Action locks for control effects (stun, root, silence).
+     * Every flag defaults to true, i.e. "not restricted".
+     */
     public record Restrictions(boolean canMove, boolean canJump,
                                boolean canAttack, boolean canUseItems) {
         public static final Codec<Restrictions> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -121,6 +153,11 @@ public record EffectDefinition(
 
     // ------------------------------------------------------------ events
 
+    /**
+     * One-shot action lists fired at lifecycle moments.
+     * Note {@code onRemoved} covers early removal while {@code onExpired} covers the timer
+     * running out - a pack can distinguish "cured" from "wore off".
+     */
     public record Events(List<RpgAction> onApplied, List<RpgAction> onRemoved,
                          List<RpgAction> onExpired, List<RpgAction> onStackAdded,
                          List<RpgAction> onMaxStacks) {
@@ -136,6 +173,7 @@ public record EffectDefinition(
 
     // ------------------------------------------------------------ display options
 
+    /** Which parts of the effect the HUD draws; {@code hidden} suppresses it entirely. */
     public record DisplayOptions(boolean showIcon, boolean showDuration,
                                  boolean showStacks, boolean showLevel, boolean hidden) {
         public static final DisplayOptions DEFAULT = new DisplayOptions(true, true, true, false, false);
@@ -150,6 +188,7 @@ public record EffectDefinition(
 
     // ------------------------------------------------------------ persistence
 
+    /** Survival across death and logout. Defaults: cleared by death, kept through a logout. */
     public record Persistence(boolean keepOnDeath, boolean keepOnLogout) {
         public static final Persistence DEFAULT = new Persistence(false, true);
         public static final Codec<Persistence> CODEC = RecordCodecBuilder.create(i -> i.group(

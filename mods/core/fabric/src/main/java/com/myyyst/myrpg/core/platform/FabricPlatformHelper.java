@@ -3,6 +3,10 @@ package com.myyyst.myrpg.core.platform;
 import com.myyyst.myrpg.core.platform.services.IPlatformHelper;
 import net.fabricmc.loader.api.FabricLoader;
 
+/**
+ * Fabric implementation of {@code IPlatformHelper}.
+ * Registered via {@code META-INF/services} and loaded by {@code Services.PLATFORM}.
+ */
 public class FabricPlatformHelper implements IPlatformHelper {
 
     @Override

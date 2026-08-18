@@ -25,8 +25,9 @@ public record StatCompare(Identifier stat, String operator, double value) implem
     @Override
     public boolean test(ConditionContext ctx) {
         StatStore store = StatHolder.resolve(ctx.self());
-        if (store == null) return false;
-        double current = store.get(stat);
+        if (store == null) return false;         // no stats at all -> cannot match
+        double current = store.get(stat);        // falls back to the stat's default value
+        // Unknown operators are treated as ">=", matching the codec's default.
         return switch (operator) {
             case "==" -> current == value;
             case "!=" -> current != value;

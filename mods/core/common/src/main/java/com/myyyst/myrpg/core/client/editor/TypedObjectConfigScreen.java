@@ -31,15 +31,23 @@ import static com.myyyst.myrpg.core.client.editor.EffectSchemas.FieldType;
 public class TypedObjectConfigScreen extends Screen {
 
     private final Screen parent;
+    /** Array the new object is appended to; only used in add mode. */
     private final JsonArray targetList;
+    /** Value written to the "type" field - the dispatch key the codec reads. */
     private final String typeId;
     private final String label;
+    /** Fields to render, taken from the schema of this type. */
     private final List<FieldSpec> fields;
+    /** Object being edited, or null when adding a new one. */
     @Nullable private final JsonObject existing;
+    /** Notifies the host screen that the definition changed. */
     private final Runnable onDirty;
 
+    /** Text/number controls, keyed by their JSON key. */
     private final Map<String, EditBox> boxes = new HashMap<>();
+    /** Current index into {@code options} for each CYCLE field. */
     private final Map<String, Integer> cycles = new HashMap<>();
+    /** Panel geometry; the height grows with the number of fields. */
     private int px, py, pw, ph;
 
     public TypedObjectConfigScreen(Screen parent, JsonArray targetList,
@@ -55,10 +63,11 @@ public class TypedObjectConfigScreen extends Screen {
         this.onDirty = onDirty;
     }
 
+    /** Builds one control per field, pre-filled from the existing object if any. */
     @Override
     protected void init() {
         pw = 280;
-        ph = Math.max(100, 90 + fields.size() * 40);
+        ph = Math.max(100, 90 + fields.size() * 40);   // floor keeps field-less types usable
         px = (width - pw) / 2;
         py = (height - ph) / 2;
 
@@ -77,6 +86,7 @@ public class TypedObjectConfigScreen extends Screen {
         }
     }
 
+    /** @return index of the stored value among the field's options, or 0 if it is absent. */
     private int existingCycleIndex(FieldSpec field) {
         if (existing != null && existing.has(field.key())) {
             String current = existing.get(field.key()).getAsString();
@@ -88,6 +98,11 @@ public class TypedObjectConfigScreen extends Screen {
         return 0;
     }
 
+    /**
+     * Text to prefill a field with. Handles the two special cases: VarValue fields, which
+     * live under a different key and are wrapped in an object, and numeric primitives,
+     * which are trimmed so "5" does not display as "5.0".
+     */
     private String existingValue(FieldSpec field) {
         if (existing == null) return field.fallback();
         // VarValue specials read back from their real JSON location
@@ -110,6 +125,7 @@ public class TypedObjectConfigScreen extends Screen {
         return field.fallback();
     }
 
+    /** Drops the ".0" from whole numbers so fields show what the author typed. */
     private static String trimNum(double d) {
         return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(d);
     }
@@ -171,6 +187,13 @@ public class TypedObjectConfigScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /**
+     * Writes the form back into the JSON and returns to the parent screen.
+     *
+     * <p>Three conversions happen here, each because the codec expects a specific JSON
+     * shape rather than the string a text field naturally produces: booleans, numbers,
+     * and the wrapped VarValue objects.</p>
+     */
     private void apply() {
         JsonObject object = existing != null ? existing : new JsonObject();
         object.addProperty("type", typeId);
@@ -178,6 +201,7 @@ public class TypedObjectConfigScreen extends Screen {
             switch (field.type()) {
                 case CYCLE -> {
                     String value = field.options()[cycles.get(field.key())];
+                    // A cycle over "true"/"false" is really a checkbox: write a real boolean.
                     if (value.equals("true") || value.equals("false")) {
                         object.addProperty(field.key(), Boolean.parseBoolean(value));
                     } else {
@@ -185,6 +209,7 @@ public class TypedObjectConfigScreen extends Screen {
                     }
                 }
                 case NUMBER -> {
+                    // Unparseable input leaves the previous value untouched.
                     try {
                         object.addProperty(field.key(),
                                 Double.parseDouble(boxes.get(field.key()).getValue().trim()));
@@ -193,6 +218,8 @@ public class TypedObjectConfigScreen extends Screen {
                 case STRING -> {
                     String raw = boxes.get(field.key()).getValue().trim();
                     if (field.key().startsWith("__var_value")) {
+                        // VarValue: one text box, two possible JSON shapes. Numbers win
+                        // when the text parses as one, so "5" is a number and "yes" a string.
                         String realKey = field.key().equals("__var_value") ? "value" : "default";
                         if (raw.isEmpty()) {
                             object.remove(realKey);
@@ -218,6 +245,7 @@ public class TypedObjectConfigScreen extends Screen {
         Minecraft.getInstance().gui.setScreen(parent);
     }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() { return false; }
 }

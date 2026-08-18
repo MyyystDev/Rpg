@@ -27,9 +27,14 @@ import java.util.List;
 
 /**
  * /myrpg entity spawn|list|inspect — contributed to core's command root.
+ *
+ * <p>The whole entities module hangs its commands off core's {@code /myrpg} tree rather
+ * than registering a root of its own, so operators only ever learn one command.
+ * Also serves the creator wand ({@code /myrpg entity wand}) and the browser GUI.</p>
  */
 public final class EntityCommands {
 
+    /** Contributes the "entity" subtree. Called once from {@code MyrpgEntities.init}. */
     public static void init() {
         RpgCommands.contribute(root -> root.then(Commands.literal("entity")
 
@@ -76,6 +81,10 @@ public final class EntityCommands {
 
     // ------------------------------------------------------------ spawn
 
+    /**
+     * Spawns {@code count} copies of a definition at the command source's position,
+     * each facing a random direction. Returns the number actually spawned.
+     */
     private static int spawn(CommandContext<CommandSourceStack> ctx, int count) {
         Identifier defId = IdentifierArgument.getId(ctx, "definition");
         if (EntitiesData.ENTITIES.get(defId).isEmpty()) {
@@ -105,6 +114,7 @@ public final class EntityCommands {
 
     // ------------------------------------------------------------ list
 
+    /** Lists every loaded definition id, sorted; hints at the data folder when empty. */
     private static int list(CommandContext<CommandSourceStack> ctx) {
         var ids = EntitiesData.ENTITIES.all().keySet().stream()
                 .sorted(Comparator.comparing(Identifier::toString))
@@ -124,6 +134,10 @@ public final class EntityCommands {
 
     // ------------------------------------------------------------ inspect
 
+    /**
+     * Dumps the nearest custom entity's definition, health and stats.
+     * The 16-block search box is centred on the caller, hence the "within 8 blocks" wording.
+     */
     private static int inspect(CommandContext<CommandSourceStack> ctx) {
         ServerLevel level = ctx.getSource().getLevel();
         Vec3 pos = ctx.getSource().getPosition();
@@ -179,5 +193,6 @@ public final class EntityCommands {
         return 1;
     }
 
+    /** Static-only command registrar: never instantiated. */
     private EntityCommands() {}
 }

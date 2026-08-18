@@ -25,34 +25,46 @@ import java.util.Set;
  */
 public class EntityBrowserScreen extends Screen {
 
+    /** Indented form, used by the OPEN JSON overlay. */
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().create();
+    /** Row height: taller than the stat/effect libraries because rows show a thumbnail. */
     private static final int ROW = 64;
     private static final String[] MENU =
             {"OPEN", "SPAWN", "DUPLICATE", "COPY ID", "OPEN JSON", "DELETE"};
 
+    /** The editor's scratch copy of every entity; shared with the screens opened from here. */
     private final EntityWorkingSet workingSet;
+    /** Indices into {@code workingSet.entries} matching the current search and filter. */
     private final List<Integer> visible = new ArrayList<>();
+    /** Tag filter chips, derived from the loaded definitions. */
     private final List<String> filters = new ArrayList<>();
     private int filterIndex;
 
     private EditBox searchBox;
+    /** Index of the first visible row. */
     private int scroll;
 
     private int menuEntry = -1;
     private int menuX, menuY;
     private int confirmEntry = -1;
 
+    /** Entry whose raw JSON overlay is open, or -1. */
     private int jsonEntry = -1;
     private int jsonScroll;
     private List<String> jsonLines = List.of();
 
     private int px, py, pw, ph, listY, listH;
 
+    /** Client handler for the "open browser" packet. */
     public static void open(EntitiesPayloads.OpenEntityBrowser payload) {
         Minecraft.getInstance().gui.setScreen(new EntityBrowserScreen(payload));
     }
 
     /** Wand flow: open the browser with the editor already pushed on one entry. */
+    /**
+     * Client handler for the wand's "edit this one" packet: opens the browser and jumps
+     * straight into the focused definition's editor.
+     */
     public static void openFocused(EntitiesPayloads.OpenEntityEditor payload) {
         EntityBrowserScreen browser = new EntityBrowserScreen(
                 new EntitiesPayloads.OpenEntityBrowser(payload.entities()));
@@ -71,6 +83,7 @@ public class EntityBrowserScreen extends Screen {
         rebuildFilters();
     }
 
+    /** Rebuilds the filter chips from the tags actually present in the loaded entities. */
     private void rebuildFilters() {
         Set<String> tagSet = new LinkedHashSet<>();
         for (EntityWorkingSet.Entry entry : workingSet.entries) {
@@ -84,6 +97,7 @@ public class EntityBrowserScreen extends Screen {
     }
 
     /** Called by child screens after the working set changes. */
+    /** Re-derives filters and the visible list; called after a create or delete. */
     public void refresh() {
         rebuildFilters();
         refilter();
@@ -107,6 +121,7 @@ public class EntityBrowserScreen extends Screen {
         refilter();
     }
 
+    /** Applies both the search text and the selected tag filter. */
     private void refilter() {
         visible.clear();
         String query = searchBox == null ? "" : searchBox.getValue().toLowerCase();
@@ -248,6 +263,7 @@ public class EntityBrowserScreen extends Screen {
                 PanelStyle.hit(mouseX, mouseY, cx + w - 96 - PanelStyle.GRID, cy + h - 32, 96, PanelStyle.CONTROL_H), true);
     }
 
+    /** Read-only pretty-printed JSON overlay, for checking what a definition really contains. */
     private void renderJsonView(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         EntityWorkingSet.Entry entry = workingSet.entries.get(jsonEntry);
         g.text(font, Component.literal(entry.entityId),
@@ -279,6 +295,7 @@ public class EntityBrowserScreen extends Screen {
 
     // ------------------------------------------------------------ actions
 
+    /** Asks the server to spawn this definition at the player - the browser's test button. */
     private void spawn(EntityWorkingSet.Entry entry) {
         Services.NETWORK.sendToServer(new EntitiesPayloads.SpawnEntity(entry.entityId));
         if (minecraft != null && minecraft.player != null) {
@@ -394,6 +411,7 @@ public class EntityBrowserScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /** Runs a context-menu action (edit, spawn, duplicate, copy id, open json, delete). */
     private void handleMenu(String action) {
         int entryIdx = menuEntry;
         menuEntry = -1;
@@ -435,6 +453,7 @@ public class EntityBrowserScreen extends Screen {
         return true;
     }
 
+    /** Last search text seen, so the list is only rebuilt when it actually changes. */
     private String lastQuery = "";
 
     @Override
@@ -446,6 +465,7 @@ public class EntityBrowserScreen extends Screen {
         }
     }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() {
         return false;

@@ -12,13 +12,20 @@ import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 
-/** Built-in target-selection providers. */
+/**
+ * Built-in target-selection providers.
+ *
+ * <p>An entity with no targeting entries never picks a fight, however many attack goals it
+ * has - the two lists are independent, and attack goals only act on an existing target.</p>
+ */
 public final class Targets {
 
+    /** Shorthand for an id in this mod's namespace. */
     private static Identifier id(String path) {
         return Identifier.fromNamespaceAndPath("myrpg_entities", path);
     }
 
+    /** Hostile to players on sight. */
     public record AttackPlayer(int priority) implements TargetDef {
         public static final MapCodec<AttackPlayer> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 2).forGetter(AttackPlayer::priority)
@@ -29,6 +36,7 @@ public final class Targets {
         }
     }
 
+    /** Neutral until hit, then fights back. Default priority 1 so revenge outranks the rest. */
     public record Retaliate(int priority) implements TargetDef {
         public static final MapCodec<Retaliate> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 1).forGetter(Retaliate::priority)
@@ -39,6 +47,7 @@ public final class Targets {
         }
     }
 
+    /** Hunts one specific entity type - guards vs zombies, predators vs prey. */
     public record AttackEntityType(int priority, Identifier entityType) implements TargetDef {
         public static final MapCodec<AttackEntityType> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 3).forGetter(AttackEntityType::priority),
@@ -56,11 +65,13 @@ public final class Targets {
         }
     }
 
+    /** Registers every built-in targeting type. Called once from {@code MyrpgEntities.init}. */
     public static void init() {
         TargetDef.REGISTRY.register(id("player"), AttackPlayer.CODEC);
         TargetDef.REGISTRY.register(id("retaliate"), Retaliate.CODEC);
         TargetDef.REGISTRY.register(id("entity_type"), AttackEntityType.CODEC);
     }
 
+    /** Namespace class for the targeting records: never instantiated. */
     private Targets() {}
 }

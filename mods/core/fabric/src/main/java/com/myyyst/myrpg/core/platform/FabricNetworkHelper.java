@@ -6,6 +6,10 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 
+/**
+ * Fabric implementation of {@code INetworkHelper}.
+ * Registered via {@code META-INF/services} and loaded by {@code Services.NETWORK}.
+ */
 public class FabricNetworkHelper implements INetworkHelper {
 
     @Override

@@ -20,13 +20,21 @@ import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.player.Player;
 
-/** Built-in AI goal providers. */
+/**
+ * Built-in AI goal providers.
+ *
+ * <p>Each record is a JSON-configurable wrapper around a vanilla (or custom) {@code Goal}.
+ * The default priorities encode the intended pecking order: fleeing (1) beats attacking (2),
+ * which beats following (4) and wandering (5), with idle looking last.</p>
+ */
 public final class AiGoals {
 
+    /** Shorthand for an id in this mod's namespace. */
     private static Identifier id(String path) {
         return Identifier.fromNamespaceAndPath("myrpg_entities", path);
     }
 
+    /** Wanders aimlessly; automatically avoids water when the definition asks it to. */
     public record RandomWalk(int priority, double speed) implements AiGoalDef {
         public static final MapCodec<RandomWalk> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 5).forGetter(RandomWalk::priority),
@@ -43,6 +51,7 @@ public final class AiGoals {
         }
     }
 
+    /** Turns to face a nearby player - the small touch that makes an NPC feel alive. */
     public record LookAtPlayer(int priority, double range) implements AiGoalDef {
         public static final MapCodec<LookAtPlayer> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 7).forGetter(LookAtPlayer::priority),
@@ -54,6 +63,7 @@ public final class AiGoals {
         }
     }
 
+    /** Idle head movement when nothing else is happening. */
     public record LookAround(int priority) implements AiGoalDef {
         public static final MapCodec<LookAround> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 8).forGetter(LookAround::priority)
@@ -64,6 +74,7 @@ public final class AiGoals {
         }
     }
 
+    /** Chases the current target and hits it in melee. */
     public record MeleeAttack(int priority, double speed) implements AiGoalDef {
         public static final MapCodec<MeleeAttack> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 2).forGetter(MeleeAttack::priority),
@@ -75,6 +86,7 @@ public final class AiGoals {
         }
     }
 
+    /** Escorts the nearest player, stopping at {@code stopDistance}. Companion behaviour. */
     public record FollowPlayer(int priority, double speed, double stopDistance, double range)
             implements AiGoalDef {
         public static final MapCodec<FollowPlayer> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -89,6 +101,7 @@ public final class AiGoals {
         }
     }
 
+    /** Keeps the entity within {@code radius} of its spawn point - guards and shopkeepers. */
     public record GuardPosition(int priority, double speed, double radius) implements AiGoalDef {
         public static final MapCodec<GuardPosition> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 3).forGetter(GuardPosition::priority),
@@ -101,6 +114,7 @@ public final class AiGoals {
         }
     }
 
+    /** Shoots at the target from a distance; requires the entity to be a ranged attacker. */
     public record RangedAttack(int priority, double speed, int interval, double range)
             implements AiGoalDef {
         public static final MapCodec<RangedAttack> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -115,6 +129,7 @@ public final class AiGoals {
         }
     }
 
+    /** Runs away below {@code threshold} of max health (0..1). Default priority 1: it wins. */
     public record FleeAtLowHealth(int priority, double speed, double threshold) implements AiGoalDef {
         public static final MapCodec<FleeAtLowHealth> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
                 Codec.INT.optionalFieldOf("priority", 1).forGetter(FleeAtLowHealth::priority),
@@ -127,6 +142,7 @@ public final class AiGoals {
         }
     }
 
+    /** Keeps away from one entity type; flees faster the closer it gets (speed * 1.25). */
     public record AvoidEntity(int priority, Identifier entityType, double distance, double speed)
             implements AiGoalDef {
         public static final MapCodec<AvoidEntity> CODEC = RecordCodecBuilder.mapCodec(i -> i.group(
@@ -144,6 +160,7 @@ public final class AiGoals {
         }
     }
 
+    /** Registers every built-in goal type. Called once from {@code MyrpgEntities.init}. */
     public static void init() {
         AiGoalDef.REGISTRY.register(id("random_walk"), RandomWalk.CODEC);
         AiGoalDef.REGISTRY.register(id("look_at_player"), LookAtPlayer.CODEC);
@@ -156,5 +173,6 @@ public final class AiGoals {
         AiGoalDef.REGISTRY.register(id("avoid_entity"), AvoidEntity.CODEC);
     }
 
+    /** Namespace class for the goal records: never instantiated. */
     private AiGoals() {}
 }

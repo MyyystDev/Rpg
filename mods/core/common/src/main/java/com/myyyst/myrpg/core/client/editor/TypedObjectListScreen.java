@@ -28,6 +28,7 @@ import static com.myyyst.myrpg.core.client.editor.EffectSchemas.FieldSpec;
  */
 public class TypedObjectListScreen extends Screen {
 
+    /** Which built-in schema catalog to use. */
     public enum Kind { CONDITION, ACTION, EFFECT }
 
     /** Uniform view over the three schema record types. */
@@ -35,24 +36,32 @@ public class TypedObjectListScreen extends Screen {
 
     private final Screen parent;
     private final String title;
+    /** The array being edited, mutated in place. */
     private final JsonArray list;
     private final Kind kind;   // null when customSchemas drives this screen
+    /** Type catalog supplied by another module (entity AI goals, targeting, ...). */
     private final java.util.@org.jspecify.annotations.Nullable Map<String, EffectSchemas.EffectSchema> customSchemas;
+    /** Notifies the host screen that the definition changed. */
     private final Runnable onDirty;
 
+    /** Type id -> form schema, resolved once in the constructor. */
     private final Map<String, SchemaView> schemas = new LinkedHashMap<>();
 
+    /** false = LIST mode, true = PICK mode. One screen, two layouts. */
     private boolean picking;
     private EditBox searchBox;
+    /** Schemas matching the picker's search text. */
     private final List<SchemaView> pickVisible = new ArrayList<>();
     private int scroll;
     private int px, py, pw, ph, listY, listH;
 
+    /** Built-in catalog, opening in list mode. */
     public TypedObjectListScreen(Screen parent, String title, JsonArray list,
                                  Kind kind, Runnable onDirty) {
         this(parent, title, list, kind, null, onDirty, false);
     }
 
+    /** Built-in catalog; {@code startPicking} skips straight to the type picker. */
     public TypedObjectListScreen(Screen parent, String title, JsonArray list,
                                  Kind kind, Runnable onDirty, boolean startPicking) {
         this(parent, title, list, kind, null, onDirty, startPicking);
@@ -87,6 +96,7 @@ public class TypedObjectListScreen extends Screen {
         loadSchemas();
     }
 
+    /** Flattens whichever catalog applies into the uniform {@link SchemaView} map. */
     private void loadSchemas() {
         if (customSchemas != null) {
             customSchemas.values().forEach(s ->
@@ -123,6 +133,7 @@ public class TypedObjectListScreen extends Screen {
         }
     }
 
+    /** Switches between list and picker mode; the layout and widgets differ, so init() reruns. */
     private void setPicking(boolean value) {
         picking = value;
         scroll = 0;
@@ -130,6 +141,7 @@ public class TypedObjectListScreen extends Screen {
         init();
     }
 
+    /** Rebuilds the picker list; matches label, type id or category. */
     private void refilter() {
         pickVisible.clear();
         String query = searchBox == null ? "" : searchBox.getValue().toLowerCase();
@@ -170,6 +182,11 @@ public class TypedObjectListScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, delta);
     }
 
+    /**
+     * LIST mode: one row per entry, with a summary line and a delete X.
+     * Entries whose type has no schema are shown but not editable - the editor never
+     * rewrites content it does not understand.
+     */
     private void renderList(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal(title), px + PanelStyle.GRID, py + PanelStyle.GRID, PanelStyle.TEXT);
         PanelStyle.button(g, font, "+ ADD", px + pw - 64 - PanelStyle.GRID, py + PanelStyle.GRID - 2, 64,
@@ -213,6 +230,7 @@ public class TypedObjectListScreen extends Screen {
                 PanelStyle.hit(mouseX, mouseY, px + pw - 80 - PanelStyle.GRID, py + ph - 32, 80, PanelStyle.CONTROL_H), true);
     }
 
+    /** PICK mode: the searchable catalog of registered types. */
     private void renderPicker(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("ADD " + singular()), px + PanelStyle.GRID, py + PanelStyle.GRID, PanelStyle.TEXT);
 
@@ -237,6 +255,7 @@ public class TypedObjectListScreen extends Screen {
                 PanelStyle.hit(mouseX, mouseY, px + PanelStyle.GRID, py + ph - 32, 80, PanelStyle.CONTROL_H), false);
     }
 
+    /** Noun for the picker header ("ADD CONDITION"); generic for custom catalogs. */
     private String singular() {
         if (kind == null) return "ENTRY";
         return switch (kind) {
@@ -265,6 +284,7 @@ public class TypedObjectListScreen extends Screen {
             }
             if (out.length() > 0) out.append("  ");
             out.append(shown);
+            // Hard truncate so a long field cannot overflow the row.
             if (out.length() > 42) {
                 out.setLength(42);
                 out.append("...");
@@ -313,6 +333,8 @@ public class TypedObjectListScreen extends Screen {
             int ry = listY + 2 + r * rowH;
             int rx = px + PanelStyle.GRID + 2;
             int rw = pw - PanelStyle.GRID * 2 - 4;
+            // The X sits inside the row, so it is tested first and the row's own
+            // hit area stops short of it (rw - 20).
             if (PanelStyle.hit(mx, my, rx + rw - 16, ry + 6, 12, 12)) {
                 list.remove(idx);
                 onDirty.run();
@@ -322,7 +344,7 @@ public class TypedObjectListScreen extends Screen {
                 JsonObject object = list.get(idx).getAsJsonObject();
                 String type = object.has("type") ? object.get("type").getAsString() : "?";
                 SchemaView schema = schemas.get(type);
-                if (schema != null) {
+                if (schema != null) {   // unknown types are display-only
                     Minecraft.getInstance().gui.setScreen(new TypedObjectConfigScreen(
                             this, list, schema.typeId(), schema.label(), schema.fields(), object, onDirty));
                 }
@@ -336,6 +358,7 @@ public class TypedObjectListScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /** One row per wheel notch, over whichever list the current mode shows. */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
         int size = picking ? pickVisible.size() : list.size();
@@ -344,6 +367,7 @@ public class TypedObjectListScreen extends Screen {
         return true;
     }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() { return false; }
 }

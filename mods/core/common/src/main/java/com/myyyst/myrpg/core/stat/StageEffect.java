@@ -35,16 +35,21 @@ public interface StageEffect {
     /** Called once when the owner exits the stage (and must tolerate never-applied). */
     void remove(LivingEntity owner, Identifier statId, String stageId);
 
+    /** The codec this instance was registered with; used when writing back to JSON. */
     MapCodec<? extends StageEffect> codec();
 
+    /** Type registry - addons may register extra effect types before/after bootstrap. */
     DispatchRegistry<StageEffect> REGISTRY = new DispatchRegistry<>(StageEffect::codec);
+    /** Polymorphic codec used wherever a stage lists its effects. */
     Codec<StageEffect> CODEC = REGISTRY.codec();
 
+    /** Registers the built-in effect types. Called once from {@code MyRpgCommon.init}. */
     static void bootstrap() {
         REGISTRY.register(core("attribute"), AttributeEffect.CODEC);
         REGISTRY.register(core("periodic_damage"), PeriodicDamage.CODEC);
     }
 
+    /** Shorthand for an id in this mod's namespace. */
     private static Identifier core(String path) {
         return Identifier.fromNamespaceAndPath(Constants.MOD_ID, path);
     }
@@ -68,6 +73,7 @@ public interface StageEffect {
             AttributeInstance instance = resolve(owner);
             if (instance == null) return;
             Identifier modifierId = modifierId(statId, stageId);
+            // remove-then-add makes re-application idempotent (relog, /reload, respawn)
             instance.removeModifier(modifierId);
             instance.addPermanentModifier(new AttributeModifier(modifierId, value, mapOperation()));
         }
@@ -78,11 +84,16 @@ public interface StageEffect {
             if (instance != null) instance.removeModifier(modifierId(statId, stageId));
         }
 
+        /**
+         * Deterministic modifier id "myrpg_core:stage/&lt;ns&gt;/&lt;stat&gt;/&lt;stage&gt;", so the
+         * same stage always owns the same modifier slot and can never stack with itself.
+         */
         private Identifier modifierId(Identifier statId, String stageId) {
             return Identifier.fromNamespaceAndPath(Constants.MOD_ID,
                     "stage/" + statId.getNamespace() + "/" + statId.getPath() + "/" + stageId);
         }
 
+        /** @return the owner's instance of the configured attribute, or null if unknown/absent. */
         @Nullable
         private AttributeInstance resolve(LivingEntity owner) {
             Holder<Attribute> holder = BuiltInRegistries.ATTRIBUTE.get(attribute).orElse(null);
@@ -94,6 +105,7 @@ public interface StageEffect {
             return owner.getAttribute(holder);
         }
 
+        /** Maps the JSON operation string to the vanilla enum; anything unknown means "add_value". */
         private AttributeModifier.Operation mapOperation() {
             return switch (operation) {
                 case "add_multiplied_base" -> AttributeModifier.Operation.ADD_MULTIPLIED_BASE;
@@ -112,11 +124,14 @@ public interface StageEffect {
                 Codec.intRange(1, Integer.MAX_VALUE).optionalFieldOf("interval", 100).forGetter(PeriodicDamage::interval)
         ).apply(i, PeriodicDamage::new));
 
+        // Nothing to set up or tear down: all the work happens in tick().
         @Override public void apply(LivingEntity owner, Identifier statId, String stageId) {}
         @Override public void remove(LivingEntity owner, Identifier statId, String stageId) {}
 
         @Override
         public void tick(LivingEntity owner) {
+            // Phase is tied to world time, not to when the stage was entered, so every
+            // entity in this stage takes its damage on the same tick.
             if (owner.level().getGameTime() % interval == 0) {
                 // NOTE drift: hurt vs hurtServer — mirror the Damage action's spelling.
                 owner.hurt(owner.damageSources().magic(), damage);

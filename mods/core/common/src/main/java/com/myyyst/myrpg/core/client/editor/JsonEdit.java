@@ -11,12 +11,14 @@ import com.google.gson.JsonObject;
  */
 public final class JsonEdit {
 
+    /** Reads a string at a dotted path, or {@code fallback} if absent. */
     public static String getString(JsonObject root, String path, String fallback) {
         JsonObject parent = walk(root, path, false);
         String key = leaf(path);
         return parent != null && parent.has(key) ? parent.get(key).getAsString() : fallback;
     }
 
+    /** Reads a number; a wrong-typed value falls back rather than throwing at the user. */
     public static double getDouble(JsonObject root, String path, double fallback) {
         JsonObject parent = walk(root, path, false);
         String key = leaf(path);
@@ -27,6 +29,7 @@ public final class JsonEdit {
         }
     }
 
+    /** Reads a boolean; a wrong-typed value falls back. */
     public static boolean getBool(JsonObject root, String path, boolean fallback) {
         JsonObject parent = walk(root, path, false);
         String key = leaf(path);
@@ -37,6 +40,7 @@ public final class JsonEdit {
         }
     }
 
+    /** Writes a string, creating any missing parent objects along the path. */
     public static void set(JsonObject root, String path, String value) {
         walk(root, path, true).addProperty(leaf(path), value);
     }
@@ -49,11 +53,19 @@ public final class JsonEdit {
         walk(root, path, true).addProperty(leaf(path), value);
     }
 
+    /** Deletes the leaf key; missing parents are simply ignored. */
     public static void remove(JsonObject root, String path) {
         JsonObject parent = walk(root, path, false);
         if (parent != null) parent.remove(leaf(path));
     }
 
+    /**
+     * Follows all but the last path segment.
+     *
+     * @param create true to build missing (or wrong-typed) intermediate objects
+     * @return the object holding the leaf key, or null when {@code create} is false and
+     *         the path does not exist
+     */
     private static JsonObject walk(JsonObject root, String path, boolean create) {
         String[] parts = path.split("\\.");
         JsonObject current = root;
@@ -67,9 +79,11 @@ public final class JsonEdit {
         return current;
     }
 
+    /** Last segment of a dotted path - the key actually read or written. */
     private static String leaf(String path) {
         return path.substring(path.lastIndexOf('.') + 1);
     }
 
+    /** Static-only helper: never instantiated. */
     private JsonEdit() {}
 }

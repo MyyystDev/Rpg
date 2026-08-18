@@ -27,16 +27,23 @@ public final class RpgEvents {
             @Nullable LivingEntity subject     // the other party (victim, target...)
     ) {}
 
+    /** Observer callback. Implementations must not throw - see {@link #post}. */
     public interface Listener {
         void on(GameEvent event);
     }
 
+    /** Registered in init order; never unsubscribed, so this list is effectively static. */
     private static final List<Listener> LISTENERS = new ArrayList<>();
 
+    /** Adds a listener. Call during mod init, not while an event is being dispatched. */
     public static void subscribe(Listener listener) {
         LISTENERS.add(listener);
     }
 
+    /**
+     * Dispatches an event to every listener.
+     * A listener that throws is logged and skipped so one broken consumer cannot stop the rest.
+     */
     public static void post(GameEvent event) {
         for (Listener listener : LISTENERS) {
             try {
@@ -48,6 +55,7 @@ public final class RpgEvents {
     }
 
     // ---- the event id vocabulary (grow as hooks land) ----
+    /** Builds an event id in this mod's namespace; also usable by addons for their own events. */
     public static Identifier id(String path) {
         return Identifier.fromNamespaceAndPath(Constants.MOD_ID, path);
     }
@@ -59,5 +67,6 @@ public final class RpgEvents {
     public static final Identifier PLAYER_DAMAGED = id("player_damaged");
     public static final Identifier PLAYER_DIMENSION_CHANGE = id("player_dimension_change");
 
+    /** Static-only dispatcher: never instantiated. */
     private RpgEvents() {}
 }

@@ -7,21 +7,33 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
+/**
+ * Draws the custom stat HUD in the top-left corner, one entry per visible stat.
+ *
+ * <p>Client only, called from each loader's HUD render hook. Everything it draws comes from
+ * {@link ClientStatCache}; the {@code hudType} field of each entry picks the shape
+ * (bar / number / percentage / icons / hidden) and {@code visibility} decides whether the
+ * entry is drawn at all.</p>
+ */
 public final class StatHudOverlay {
 
+    /** Bar geometry and the gap between an element and the value text next to it. */
     private static final int BAR_W = 80, BAR_H = 7, PAD = 4;
 
     private static long lastLog;
 
+    /** Renders every visible stat, stacking downwards from the top-left. */
     public static void render(GuiGraphicsExtractor g) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
-        int y = 8;
+        int y = 8;   // running cursor: each entry advances it by its own height
         for (RpgPayloads.StatEntry entry : ClientStatCache.entries()) {
             if (!visible(entry)) continue;
 
             int color = parseColor(entry.color());
+            // Position inside the stat's range, clamped to 0..1. The epsilon guards
+            // against a definition where min == max.
             double frac = (entry.value() - entry.min()) / Math.max(1e-9, entry.max() - entry.min());
             frac = Math.max(0, Math.min(1, frac));
 
@@ -38,7 +50,7 @@ public final class StatHudOverlay {
                             8, y, 0xFF000000 | color);
                     y += 12;
                 }
-                case "icons" -> {
+                case "icons" -> {   // a fixed row of 10 pips, filled proportionally
                     g.text(mc.font, Component.literal(entry.name()), 8, y, 0xFFFFFFFF);
                     int pips = 10;
                     int filled = (int) Math.round(frac * pips);
@@ -52,7 +64,7 @@ public final class StatHudOverlay {
                     }
                     y += 10 + 8 + PAD;
                 }
-                default -> {   // bar
+                default -> {   // bar - the default when a definition names no hud type
                     g.text(mc.font, Component.literal(entry.name()), 8, y, 0xFFFFFFFF);
                     int barY = y + 10;
                     drawBar(g, 8, barY, BAR_W, frac, color);
@@ -90,6 +102,10 @@ public final class StatHudOverlay {
         }
     }
 
+    /**
+     * Expands a datapack icon id into the actual texture path.
+     * @return null if the string is not a valid identifier, so the caller falls back to a pip
+     */
     private static Identifier textureFor(String icon) {
         Identifier id = Identifier.tryParse(icon);
         if (id == null) return null;
@@ -98,6 +114,7 @@ public final class StatHudOverlay {
                 "textures/" + id.getPath() + ".png");
     }
 
+    /** Applies the stat's visibility mode; unknown modes are treated as "always". */
     private static boolean visible(RpgPayloads.StatEntry entry) {
         return switch (entry.visibility()) {
             case "never" -> false;
@@ -118,6 +135,7 @@ public final class StatHudOverlay {
         graphics.fill(x, y, x + w, y + h, color);
     }
 
+    /** Parses "#RRGGBB" into a packed RGB int; falls back to white on anything malformed. */
     private static int parseColor(String hex) {
         try {
             return Integer.parseInt(hex.replace("#", ""), 16);
@@ -126,6 +144,7 @@ public final class StatHudOverlay {
         }
     }
 
+    /** Whole numbers print without a decimal point, everything else with one digit. */
     private static String format(double value) {
         return value == Math.rint(value) ? String.valueOf((long) value) : String.format("%.1f", value);
     }
@@ -159,6 +178,7 @@ public final class StatHudOverlay {
         }
     }
 
+    /** Blends the colour towards white by {@code amount} (0..1), for the bar's top highlight. */
     private static int lighten(int rgb, float amount) {
         int r = (rgb >> 16) & 0xFF, gr = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
         r = Math.min(255, (int) (r + (255 - r) * amount));
@@ -167,6 +187,7 @@ public final class StatHudOverlay {
         return (r << 16) | (gr << 8) | b;
     }
 
+    /** Blends the colour towards black by {@code amount} (0..1), for the bar's bottom shade. */
     private static int darken(int rgb, float amount) {
         int r = (int) (((rgb >> 16) & 0xFF) * (1 - amount));
         int gr = (int) (((rgb >> 8) & 0xFF) * (1 - amount));

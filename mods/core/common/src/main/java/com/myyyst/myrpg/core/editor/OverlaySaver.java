@@ -29,12 +29,22 @@ import java.nio.file.Path;
  */
 public final class OverlaySaver {
 
+    /** Pretty printing keeps the written files hand-editable afterwards. */
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    /** Hard cap on client-submitted JSON (256 KB) so a bad client cannot fill the disk. */
     private static final int MAX_JSON_LENGTH = 256 * 1024;
+    /** Folder name of the generated datapack inside the world's datapacks directory. */
     private static final String PACK_NAME = "myrpg_editor";
 
     /**
+     * Validates and writes one definition file, then reloads datapacks.
+     *
+     * <p>The checks run in a deliberate order - permission, size, syntax, schema, path -
+     * so that the cheapest rejections happen first and nothing touches the filesystem
+     * until the content is known to be valid.</p>
+     *
      * @param folder datapack folder under data/<ns>/, e.g. "myrpg/stats"
+     * @param codec  the same codec the loader uses, so anything saved is guaranteed loadable
      * @return true on success (feedback already sent to the player either way)
      */
     public static <T> boolean save(ServerPlayer player, String folder,
@@ -61,6 +71,8 @@ public final class OverlaySaver {
             fail(player, "Invalid: " + result.error().map(Object::toString).orElse("unknown"));
             return false;
         }
+        // Re-encode from the parsed object: drops unknown fields and normalises formatting,
+        // so what lands on disk is exactly what the game will read back.
         JsonElement clean = codec.encodeStart(JsonOps.INSTANCE, result.result().get())
                 .result().orElse(element);
 
@@ -71,6 +83,7 @@ public final class OverlaySaver {
                 .resolve("data").resolve(id.getNamespace())
                 .resolve(folder).resolve(id.getPath() + ".json")
                 .toAbsolutePath().normalize();
+        // Path-traversal guard: an id like "../../evil" would otherwise escape the pack.
         if (!file.startsWith(packRoot)) {              // both sides normalized — the NeoForge lesson
             fail(player, "Invalid path");
             return false;
@@ -86,6 +99,7 @@ public final class OverlaySaver {
             return false;
         }
 
+        // Reload datapacks so the change is live immediately, without a server restart.
         server.getCommands().performPrefixedCommand(
                 server.createCommandSourceStack().withSuppressedOutput(), "reload");
         player.sendSystemMessage(Component.literal("Saved " + id + " — reloaded."));
@@ -105,6 +119,8 @@ public final class OverlaySaver {
         Path file = packRoot.resolve("data").resolve(id.getNamespace())
                 .resolve(folder).resolve(id.getPath() + ".json")
                 .toAbsolutePath().normalize();
+        // Existence inside the overlay is what makes a file deletable: files shipped by
+        // the mod or by another datapack live elsewhere and can never be reached here.
         if (!file.startsWith(packRoot) || !Files.exists(file)) {
             fail(player, "Not an editor-created file (originals can't be deleted)");
             return false;
@@ -121,6 +137,10 @@ public final class OverlaySaver {
         return true;
     }
 
+    /**
+     * Creates the overlay pack's pack.mcmeta on first save - without it Minecraft would
+     * not recognise the folder as a datapack at all. Existing files are left alone.
+     */
     private static void ensurePackMcmeta(Path packRoot) throws IOException {
         Path mcmeta = packRoot.resolve("pack.mcmeta");
         if (Files.exists(mcmeta)) return;
@@ -136,6 +156,7 @@ public final class OverlaySaver {
                 """);
     }
 
+    /** Sends a short "[editor] ..." message; every rejection path goes through here. */
     private static void fail(ServerPlayer player, String message) {
         player.sendSystemMessage(Component.literal("[editor] " + message));
     }

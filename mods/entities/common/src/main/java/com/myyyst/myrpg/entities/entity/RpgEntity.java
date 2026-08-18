@@ -34,6 +34,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -70,19 +71,36 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.Optional;
 
-/** The one generic base entity. Everything else is data. */
+/**
+ * The one generic base entity. Everything else is data.
+ *
+ * <p>There is a single entity type registered with Minecraft; a "bandit" and a "shopkeeper"
+ * are the same class holding different {@link EntityDefinition}s. That is what lets a
+ * datapack invent new mobs without any Java.</p>
+ *
+ * <p>Two paths lead into an entity's configuration, and keeping them apart matters:
+ * {@link #applyDefinition} for a fresh spawn (writes health, stats and gear), and
+ * {@link #applyRuntime} for a reload from NBT (rebuilds only what is not saved). Mixing
+ * them up would reset a wounded entity to full health on every chunk load.</p>
+ */
 public class RpgEntity extends PathfinderMob
         implements StatHolder, EffectHolder, EffectImmune, RangedAttackMob {
 
+    /** Custom RPG stats owned by this entity (players use PlayerStats instead). */
     private final StatStore stats = new StatStore();
+    /** Custom status effects on this entity. */
     private final EffectStore rpgEffects = new EffectStore();
+    /** Which definition this entity is an instance of; null before it is applied. */
     @Nullable private Identifier definitionId;
+    /** Home position for GuardPositionGoal; defaults to the spawn point. */
     @Nullable private BlockPos guardAnchor;
     private boolean allowDespawn = false;
     private boolean canClimb = true;
     private float hitboxWidth;    // 0 = use the type default
     private float hitboxHeight;
 
+    // Synched data: the client needs these three to render, and nothing else.
+    // Everything else about a definition stays server-side.
     private static final EntityDataAccessor<String> DATA_DEFINITION =
             SynchedEntityData.defineId(RpgEntity.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_MODEL =
@@ -102,6 +120,11 @@ public class RpgEntity extends PathfinderMob
         builder.define(DATA_TEXTURE, "");
     }
 
+    /**
+     * Baseline attributes for the type; a definition overrides individual values later.
+     * FLYING_SPEED must exist here even for ground entities, because {@code can_fly}
+     * can swap in a FlyingMoveControl at runtime.
+     */
     public static AttributeSupplier.Builder createAttributes() {
         return PathfinderMob.createMobAttributes()
                 .add(Attributes.ATTACK_DAMAGE, 2.0)
@@ -138,9 +161,11 @@ public class RpgEntity extends PathfinderMob
         if (scaleAttr != null) scaleAttr.setBaseValue(scale);
     }
 
+    /** Server-side definition id, or null if none has been applied. */
     @Nullable
     public Identifier definitionId() { return definitionId; }
 
+    /** Looks up the live definition; empty if unset or if a reload removed the file. */
     public Optional<EntityDefinition> definition() {
         return definitionId == null ? Optional.empty()
                 : EntitiesData.ENTITIES.get(definitionId);
@@ -181,7 +206,7 @@ public class RpgEntity extends PathfinderMob
             if (kb != null) kb.setBaseValue(c.knockback());
         });
 
-        // stat seeds
+        // stat seeds — starting values only; saved values win on reload
         for (var statEntry : def.stats().entrySet()) {
             stats.set(this, statEntry.getKey(), statEntry.getValue());
         }
@@ -198,7 +223,7 @@ public class RpgEntity extends PathfinderMob
         this.guardAnchor = blockPosition();
 
         applyRuntime(def);
-        setHealth(getMaxHealth());
+        setHealth(getMaxHealth());   // only correct on a fresh spawn — see readAdditionalSaveData
 
         EntityEvents.fire(this, EntityEvents.SPAWN, null);
     }
@@ -261,6 +286,13 @@ public class RpgEntity extends PathfinderMob
         rebuildAi(def, canSwim);
     }
 
+    /**
+     * Clears and rebuilds both goal selectors from the definition.
+     *
+     * <p>Called on every spawn and load rather than incrementally patched, so a datapack
+     * reload can change an entity's whole behaviour. Swimming gets priority 0 because
+     * drowning outranks every plan.</p>
+     */
     private void rebuildAi(EntityDefinition def, boolean canSwim) {
         goalSelector.removeAllGoals(g -> true);
         targetSelector.removeAllGoals(g -> true);
@@ -304,6 +336,7 @@ public class RpgEntity extends PathfinderMob
         }
     }
 
+    /** Fills every equipment slot named by the definition. */
     private void applyEquipment(EntityDefinition.Equipment eq) {
         equip(EquipmentSlot.MAINHAND, eq.mainhand());
         equip(EquipmentSlot.OFFHAND, eq.offhand());
@@ -313,6 +346,7 @@ public class RpgEntity extends PathfinderMob
         equip(EquipmentSlot.FEET, eq.feet());
     }
 
+    /** Equips one slot; an unknown item id is logged and skipped rather than fatal. */
     private void equip(EquipmentSlot slot, Optional<String> itemId) {
         if (itemId.isEmpty()) return;
         Identifier id = Identifier.tryParse(itemId.get());
@@ -333,6 +367,10 @@ public class RpgEntity extends PathfinderMob
     @Override
     public EffectStore rpgEffects() { return rpgEffects; }
 
+    /**
+     * Immunity entries are either an exact effect id or "#tag" for a whole family,
+     * so "immune to all crowd control" is one line in the definition.
+     */
     @Override
     public boolean isEffectImmune(Identifier effectId, EffectDefinition effectDef) {
         EntityDefinition def = definition().orElse(null);
@@ -347,11 +385,14 @@ public class RpgEntity extends PathfinderMob
         return false;
     }
 
+    /** Home position used by GuardPositionGoal; persisted in NBT. */
     @Nullable
     public BlockPos guardAnchor() { return guardAnchor; }
 
+    /** Moves the guard post, e.g. when an NPC is relocated by a quest. */
     public void setGuardAnchor(@Nullable BlockPos pos) { this.guardAnchor = pos; }
 
+    /** Server-side per-tick work: stat rules, custom effects, entity rules. */
     @Override
     public void tick() {
         super.tick();
@@ -366,10 +407,41 @@ public class RpgEntity extends PathfinderMob
         definition().ifPresent(def -> EntityRuleEngine.tick(this, def));
     }
 
+    // ------------------------------------------------------------ melee combat
+
+    /** Melee hits: blocked while attack-restricted (stunned), then the
+     *  combat component's on_hit effects land on the victim. */
+    @Override
+    public boolean doHurtTarget(ServerLevel level, Entity target) {
+        if (EffectManager.isRestricted(this, "attack")) return false;
+        boolean hurt = super.doHurtTarget(level, target);
+        if (hurt && target instanceof LivingEntity living) {
+            applyOnHitEffects(living);
+        }
+        return hurt;
+    }
+
+    /** Rolls each on_hit entry's chance and applies the ones that pass, crediting this entity. */
+    private void applyOnHitEffects(LivingEntity victim) {
+        definition().flatMap(EntityDefinition::combat).ifPresent(combat -> {
+            for (EntityDefinition.EffectApplication app : combat.onHit()) {
+                if (app.chance() < 1.0 && getRandom().nextDouble() >= app.chance()) continue;
+                EffectManager.apply(victim, app.effect(), app.duration(),
+                        app.level(), app.stacks(), getUUID());
+            }
+        });
+    }
+
     // ------------------------------------------------------------ ranged combat
 
+    /**
+     * Fires the configured projectile at the target.
+     * The aim vector points slightly above the target's feet and adds an arc proportional
+     * to horizontal distance, the same lead vanilla skeletons use.
+     */
     @Override
     public void performRangedAttack(LivingEntity target, float power) {
+        if (EffectManager.isRestricted(this, "attack")) return;
         ItemStack projectileStack = rangedProjectile();
         AbstractArrow arrow = ProjectileUtil.getMobArrow(this, projectileStack, power, getMainHandItem());
         double xd = target.getX() - getX();
@@ -402,6 +474,10 @@ public class RpgEntity extends PathfinderMob
 
     // ------------------------------------------------------------ interactions
 
+    /**
+     * Right-click handling: runs the first interaction whose conditions all pass.
+     * Off-hand clicks and entities with no interactions fall through to vanilla behaviour.
+     */
     @Override
     protected InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (hand != InteractionHand.MAIN_HAND) return super.mobInteract(player, hand);
@@ -437,6 +513,7 @@ public class RpgEntity extends PathfinderMob
         return hurt;
     }
 
+    /** Fires the death event exactly once - vanilla can call die() more than once. */
     @Override
     public void die(DamageSource source) {
         boolean firstDeath = !this.dead;
@@ -449,6 +526,7 @@ public class RpgEntity extends PathfinderMob
 
     // ------------------------------------------------------------ NBT
 
+    /** Saves only what cannot be rebuilt: definition id, guard post, stats and effects. */
     @Override
     public void addAdditionalSaveData(ValueOutput output) {
         super.addAdditionalSaveData(output);
@@ -462,6 +540,10 @@ public class RpgEntity extends PathfinderMob
         rpgEffects.save(output, "myrpg_effects");
     }
 
+    /**
+     * Load path. Deliberately does <em>not</em> call {@link #applyDefinition}: saved health,
+     * stats and equipment must survive, so only the rebuildable runtime side is re-applied.
+     */
     @Override
     public void readAdditionalSaveData(ValueInput input) {
         super.readAdditionalSaveData(input);
@@ -481,16 +563,19 @@ public class RpgEntity extends PathfinderMob
 
     // ------------------------------------------------------------ lifecycle
 
+    /** Defaults to false, so hand-placed NPCs never vanish. */
     @Override
     public boolean removeWhenFarAway(double distance) {
         return allowDespawn;
     }
 
+    /** Lets a definition forbid ladder climbing entirely. */
     @Override
     public boolean onClimbable() {
         return canClimb && super.onClimbable();
     }
 
+    /** Applies the definition's hitbox override; each axis falls back to the type default. */
     @Override
     protected EntityDimensions getDefaultDimensions(Pose pose) {
         EntityDimensions base = super.getDefaultDimensions(pose);
@@ -500,6 +585,7 @@ public class RpgEntity extends PathfinderMob
                 hitboxHeight > 0 ? hitboxHeight : base.height());
     }
 
+    /** XP comes from the definition's loot block; 0 when unset. */
     @Override
     protected int getBaseExperienceReward(ServerLevel level) {
         // NOTE drift: if this override doesn't match, the vanilla method is
@@ -508,6 +594,11 @@ public class RpgEntity extends PathfinderMob
                 .map(EntityDefinition.Loot::xp).orElse(0);
     }
 
+    /**
+     * Rolls the definition's loot table by hand.
+     * Normally a mob just declares its loot table, but that method is final here, so the
+     * table is looked up and rolled manually with an equivalent loot context.
+     */
     @Override
     protected void dropCustomDeathLoot(ServerLevel level, DamageSource damageSource, boolean recentlyHit) {
         super.dropCustomDeathLoot(level, damageSource, recentlyHit);

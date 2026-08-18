@@ -17,6 +17,11 @@ import net.minecraft.server.level.ServerPlayer;
  * /myrpg effect remove <player> <effect>
  * /myrpg effect clear <player>
  * /myrpg effect list <player>
+ *
+ * <p>Operator tooling for testing effects without writing a datapack rule. The whole tree
+ * is built with Brigadier: each {@code .then(...)} adds a branch and each {@code .executes}
+ * marks a point where the command is complete, which is how the optional trailing
+ * duration/level/stacks arguments are expressed.</p>
  */
 public final class EffectCommands {
 
@@ -104,6 +109,12 @@ public final class EffectCommands {
                                 })))));
     }
 
+    /**
+     * Shared handler for all four arities of "effect apply".
+     *
+     * @param duration -1 to use the definition's default
+     * @return 1 on success, 0 when the effect is unknown or the target refused it
+     */
     private static int apply(net.minecraft.commands.CommandSourceStack source, ServerPlayer target,
                              Identifier effectId, int duration, int level, int stacks) {
         EffectDefinition def = CoreData.EFFECTS.get(effectId).orElse(null);
@@ -122,5 +133,6 @@ public final class EffectCommands {
         return changed ? 1 : 0;
     }
 
+    /** Static-only command registrar: never instantiated. */
     private EffectCommands() {}
 }

@@ -25,10 +25,14 @@ import java.util.Map;
 public class RpgEntityRenderer
         extends HumanoidMobRenderer<RpgEntity, RpgEntityRenderState, HumanoidModel<RpgEntityRenderState>> {
 
+    /** Every registered model, baked once at construction - baking per frame would be far too slow. */
     private final Map<Identifier, HumanoidModel<RpgEntityRenderState>> models = new HashMap<>();
+    /** Texture used for each model when a definition names none. */
     private final Map<Identifier, Identifier> defaultTextures = new HashMap<>();
+    /** Used when a definition names a model that is not registered. */
     private final HumanoidModel<RpgEntityRenderState> fallbackModel;
 
+    /** Bakes every registered model bundle and attaches the vanilla armour layer. */
     public RpgEntityRenderer(EntityRendererProvider.Context context) {
         super(context, new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER)), 0.5f);
 
@@ -50,6 +54,10 @@ public class RpgEntityRenderer
         return new RpgEntityRenderState();
     }
 
+    /**
+     * Copies the entity's synced model and texture ids into the render state, resolving
+     * both to concrete objects (with fallbacks) so the draw path never has to look them up.
+     */
     @Override
     public void extractRenderState(RpgEntity entity, RpgEntityRenderState state, float partialTicks) {
         super.extractRenderState(entity, state, partialTicks);
@@ -63,6 +71,10 @@ public class RpgEntityRenderer
                 : defaultTextures.getOrDefault(modelId, defaultTextures.get(RpgModels.HUMANOID));
     }
 
+    /**
+     * A renderer normally has one fixed model, so the per-instance model is swapped into
+     * the inherited field right before the superclass draws.
+     */
     @Override
     public void submit(RpgEntityRenderState state, PoseStack poseStack,
                        SubmitNodeCollector collector, CameraRenderState camera) {
@@ -76,6 +88,7 @@ public class RpgEntityRenderer
                 : defaultTextures.get(RpgModels.HUMANOID);
     }
 
+    /** Null-safe identifier parse; empty or malformed strings mean "use the default". */
     @Nullable
     private static Identifier parse(String raw) {
         return raw == null || raw.isEmpty() ? null : Identifier.tryParse(raw);

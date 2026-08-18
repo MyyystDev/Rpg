@@ -11,9 +11,12 @@ import net.minecraft.network.chat.Component;
  */
 public final class PanelStyle {
 
-    // grid
+    // grid — every editor position is a multiple of these
+    /** Base spacing unit; all margins and gaps are multiples of it. */
     public static final int GRID = 8;
+    /** Height of every button and field, so controls line up across screens. */
     public static final int CONTROL_H = 24;
+    /** Height of one list row (icon + two text lines). */
     public static final int ROW_H = 52;
 
     // palette — dark stone
@@ -87,6 +90,10 @@ public final class PanelStyle {
         g.text(font, Component.literal(label), x + 4, y + 2, color);
     }
 
+    /**
+     * Rectangle hit test. The drawing helpers are stateless, so every screen pairs its
+     * draw calls with this to decide what the mouse is over.
+     */
     public static boolean hit(double mx, double my, int x, int y, int w, int h) {
         return mx >= x && mx < x + w && my >= y && my < y + h;
     }
@@ -94,13 +101,16 @@ public final class PanelStyle {
     /** Vertical scrollbar inside a list frame. Draws only when needed. */
     public static void scrollbar(GuiGraphicsExtractor g, int x, int y, int h,
                                  int totalItems, int visibleItems, int scroll) {
-        if (totalItems <= visibleItems) return;
+        if (totalItems <= visibleItems) return;   // everything fits: no bar at all
         g.fill(x, y, x + 4, y + h, INSET_BG);
+        // Thumb length is proportional to the visible fraction, with a 12px floor so it
+        // stays grabbable in very long lists.
         int thumbH = Math.max(12, h * visibleItems / totalItems);
         int maxScroll = totalItems - visibleItems;
         int thumbY = y + (h - thumbH) * Math.min(scroll, maxScroll) / maxScroll;
         g.fill(x, thumbY, x + 4, thumbY + thumbH, PANEL_LIGHT);
     }
 
+    /** Static-only style helper: never instantiated. */
     private PanelStyle() {}
 }

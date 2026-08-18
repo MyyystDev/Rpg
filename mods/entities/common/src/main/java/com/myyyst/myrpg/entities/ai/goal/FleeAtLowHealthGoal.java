@@ -20,6 +20,7 @@ public class FleeAtLowHealthGoal extends Goal {
     private final double speed;
     private final double threshold;
 
+    /** Destination chosen when the goal starts; null when idle. */
     @Nullable private Vec3 fleePos;
 
     public FleeAtLowHealthGoal(RpgEntity mob, double speed, double threshold) {
@@ -29,10 +30,16 @@ public class FleeAtLowHealthGoal extends Goal {
         setFlags(EnumSet.of(Goal.Flag.MOVE));
     }
 
+    /** Threshold is a fraction of max health, so it scales with buffed or nerfed entities. */
     private boolean lowHealth() {
         return mob.getHealth() <= mob.getMaxHealth() * threshold;
     }
 
+    /**
+     * Needs both low health and a living attacker to run from - an entity that burned down
+     * on lava has nowhere to flee to. Searches up to 16 blocks out and 7 up/down for a spot
+     * away from the attacker; failing to find one simply means the goal does not start.
+     */
     @Override
     public boolean canUse() {
         if (!lowHealth()) return false;

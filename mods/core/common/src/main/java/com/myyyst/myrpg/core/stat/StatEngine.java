@@ -15,11 +15,23 @@ import java.util.List;
 /**
  * Drives stats: continuous stage effects + interval rules on tick, and
  * event-triggered rules via RpgEvents (subscribed in RpgCore.init()).
+ *
+ * <p>Two entry points, both server side:</p>
+ * <ul>
+ *   <li>{@link #tick} - called every server tick per player by {@code PlayerStatTicker};
+ *       runs stage effects and time-based rules.</li>
+ *   <li>{@link #onEvent} - called when something happens in the world (damage, kill, ...);
+ *       runs rules whose trigger matches the event id.</li>
+ * </ul>
+ *
+ * <p>Note that both loops walk <em>every</em> loaded stat definition, not just the ones the
+ * owner has values for: a rule may well be what first gives the owner a value.</p>
  */
 public final class StatEngine {
 
     // ------------------------------------------------------------ tick side
 
+    /** Per-tick pass: continuous stage effects, then any rule whose trigger is due now. */
     public static void tick(StatStore store, LivingEntity owner) {
         long gameTime = owner.level().getGameTime();
 
@@ -39,6 +51,7 @@ public final class StatEngine {
                 }
             }
 
+            // interval / time based rules ("every N ticks", "on a schedule")
             for (StatDef.Rule rule : def.rules()) {
                 if (!rule.trigger().shouldFireAt(gameTime, owner)) continue;
                 if (!allPass(rule.conditions(), conditionContext(owner, null))) continue;
@@ -50,6 +63,13 @@ public final class StatEngine {
         }
     }
 
+    /**
+     * Event side: runs every rule whose trigger matches {@code event.id()}.
+     *
+     * <p>Subscribed to {@code RpgEvents} in {@code MyRpgCommon.init}. The "owner" of the
+     * reaction is the player when one is involved, otherwise the event's subject entity;
+     * entities without a stat store (plain vanilla mobs) are skipped.</p>
+     */
     public static void onEvent(RpgEvents.GameEvent event) {
         LivingEntity owner = event.player() != null ? event.player() : event.subject();
         if (owner == null) return;
@@ -71,6 +91,7 @@ public final class StatEngine {
 
     // ------------------------------------------------------------ helpers
 
+    /** Logical AND over a rule's conditions; an empty list passes. */
     private static boolean allPass(List<RpgCondition> conditions, RpgCondition.ConditionContext ctx) {
         for (RpgCondition condition : conditions) {
             if (!condition.test(ctx)) return false;
@@ -78,6 +99,7 @@ public final class StatEngine {
         return true;
     }
 
+    /** Packs owner/player/target into the context conditions read from. */
     private static RpgCondition.ConditionContext conditionContext(LivingEntity owner,
                                                                   @Nullable LivingEntity target) {
         ServerPlayer player = owner instanceof ServerPlayer p ? p : null;
@@ -91,5 +113,6 @@ public final class StatEngine {
         return new RpgAction.ActionContext(owner, player);
     }
 
+    /** Static-only engine: never instantiated. */
     private StatEngine() {}
 }

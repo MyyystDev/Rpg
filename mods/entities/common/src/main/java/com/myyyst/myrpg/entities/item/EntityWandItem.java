@@ -40,11 +40,16 @@ public class EntityWandItem extends Item {
         super(properties);
     }
 
+    /** Gamemaster gate; every wand action goes through this first. */
     private static boolean allowed(ServerPlayer player) {
         return Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)
                 .test(player.createCommandSourceStack());
     }
 
+    /**
+     * Steps to the next definition, sorted by id so the order is stable between sessions.
+     * An unknown current selection yields index -1, so the cycle starts at the first entry.
+     */
     private static void cycleSelection(ServerPlayer player) {
         var ids = EntitiesData.ENTITIES.all().keySet().stream()
                 .sorted((a, b) -> a.toString().compareTo(b.toString())).toList();
@@ -59,6 +64,7 @@ public class EntityWandItem extends Item {
                 "[wand] Selected " + ids.get(next) + "  (" + (next + 1) + "/" + ids.size() + ")"));
     }
 
+    /** Right-click in the air: sneak cycles the selection, otherwise report the current one. */
     @Override
     public InteractionResult use(Level level, Player player, InteractionHand hand) {
         if (level.isClientSide()) return InteractionResult.SUCCESS;
@@ -74,6 +80,7 @@ public class EntityWandItem extends Item {
         return InteractionResult.SUCCESS_SERVER;
     }
 
+    /** Right-click a block: place the selected definition at the clicked point, facing the player. */
     @Override
     public InteractionResult useOn(UseOnContext context) {
         Player player = context.getPlayer();
@@ -99,6 +106,7 @@ public class EntityWandItem extends Item {
         if (entity == null) return InteractionResult.PASS;
 
         Vec3 pos = context.getClickLocation();
+        // +180 so the placed entity faces the player rather than away from them.
         entity.snapTo(pos.x, pos.y, pos.z, player.getYRot() + 180.0f, 0.0f);
         entity.applyDefinition(defId);
         serverLevel.addFreshEntity(entity);
@@ -106,6 +114,7 @@ public class EntityWandItem extends Item {
         return InteractionResult.SUCCESS_SERVER;
     }
 
+    /** Right-click a custom entity: open its definition in the editor. Other entities pass through. */
     @Override
     public InteractionResult interactLivingEntity(ItemStack itemStack, Player player,
                                                   LivingEntity target, InteractionHand hand) {

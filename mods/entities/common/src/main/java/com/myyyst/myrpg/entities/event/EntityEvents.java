@@ -22,19 +22,26 @@ import org.jspecify.annotations.Nullable;
  */
 public final class EntityEvents {
 
+    /** Shorthand for an event id in this mod's namespace. */
     private static Identifier id(String path) {
         return Identifier.fromNamespaceAndPath(MyrpgEntities.MOD_ID, path);
     }
 
+    // The four moments an entity definition can react to.
     public static final Identifier SPAWN = id("entity_spawn");
     public static final Identifier INTERACT = id("entity_interact");
     public static final Identifier HURT = id("entity_hurt");
     public static final Identifier DEATH = id("entity_death");
 
+    /**
+     * Dispatches one entity event down both paths described above.
+     * @param player the player involved, if any (attacker, killer, interacting player)
+     */
     public static void fire(RpgEntity entity, Identifier eventId, @Nullable ServerPlayer player) {
-        RpgEvents.post(new RpgEvents.GameEvent(eventId, player, entity));
-        EntityRuleEngine.onEvent(entity, eventId, player);
+        RpgEvents.post(new RpgEvents.GameEvent(eventId, player, entity));   // player-side rules
+        EntityRuleEngine.onEvent(entity, eventId, player);                  // entity-side rules
     }
 
+    /** Static-only dispatcher: never instantiated. */
     private EntityEvents() {}
 }

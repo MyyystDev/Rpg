@@ -11,7 +11,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** One custom entity definition, loaded from the myrpg/entities data folder. */
+/**
+ * One custom entity definition, loaded from the myrpg/entities data folder.
+ *
+ * <p>Everything a spawned {@code RpgEntity} needs, in one record: how it looks, how strong
+ * it is, how it moves and fights, what it does when right-clicked, and what it drops. The
+ * entity itself owns no hard-coded behaviour - it reads this definition at spawn time and
+ * builds its AI, attributes and stats from it.</p>
+ *
+ * <p>Notice how much is reused from core: {@code StatDef.Rule} for reactions, and the
+ * condition/action vocabulary for interactions, so an entity can do anything a stat rule can.</p>
+ *
+ * @param attributes       vanilla attribute overrides, keyed by attribute name
+ * @param stats            starting values for custom RPG stats
+ * @param ai               AI goals, applied in list order (order = priority)
+ * @param targeting        what the entity considers an enemy
+ * @param interactions     right-click behaviours, first matching one wins
+ * @param effectImmunities effect ids, or "#tag" entries, this entity cannot be affected by
+ */
 public record EntityDefinition(
         Optional<Display> display,
         List<String> tags,
@@ -30,6 +47,7 @@ public record EntityDefinition(
         List<String> effectImmunities   // "mypack:frozen" or "#rpg:crowd_control"
 ) {
 
+    /** Name plate and description. {@code nameVisible} controls the floating name tag. */
     public record Display(Optional<String> name, Optional<String> description, boolean nameVisible) {
         public static final Codec<Display> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.optionalFieldOf("name").forGetter(Display::name),
@@ -38,6 +56,13 @@ public record EntityDefinition(
         ).apply(i, Display::new));
     }
 
+    /**
+     * How the entity is drawn.
+     *
+     * @param model  one of the models registered in {@code RpgModels}
+     * @param scale  render scale; hitbox size follows unless overridden below
+     * @param glow   permanent outline, useful for quest markers
+     */
     public record Appearance(String model, Optional<Identifier> texture, double scale,
                              Optional<Double> hitboxWidth, Optional<Double> hitboxHeight,
                              boolean glow) {
@@ -51,6 +76,7 @@ public record EntityDefinition(
         ).apply(i, Appearance::new));
     }
 
+    /** Starting gear per slot, as item ids. Absent slots stay empty. */
     public record Equipment(Optional<String> mainhand, Optional<String> offhand,
                             Optional<String> head, Optional<String> chest,
                             Optional<String> legs, Optional<String> feet) {
@@ -64,6 +90,7 @@ public record EntityDefinition(
         ).apply(i, Equipment::new));
     }
 
+    /** Navigation capabilities; {@code type} selects the navigator ("ground", "flying", ...). */
     public record Movement(String type, boolean canSwim, boolean canOpenDoors, boolean avoidWater,
                            boolean canJump, boolean canClimb, boolean canFly) {
         public static final Codec<Movement> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -77,9 +104,34 @@ public record EntityDefinition(
         ).apply(i, Movement::new));
     }
 
+    /** One "my hits cause X" entry: { "effect": "mypack:bleeding",
+     *  "duration": 200, "level": 1, "stacks": 1, "chance": 0.35 }.
+     *  duration -1 = the effect definition's default.
+     *  chance is 0..1 and rolled per hit, so 0.35 means "about a third of hits". */
+    public record EffectApplication(Identifier effect, int duration, int level,
+                                    int stacks, double chance) {
+        public static final Codec<EffectApplication> CODEC = RecordCodecBuilder.create(i -> i.group(
+                Identifier.CODEC.fieldOf("effect").forGetter(EffectApplication::effect),
+                Codec.INT.optionalFieldOf("duration", -1).forGetter(EffectApplication::duration),
+                Codec.INT.optionalFieldOf("level", 1).forGetter(EffectApplication::level),
+                Codec.INT.optionalFieldOf("stacks", 1).forGetter(EffectApplication::stacks),
+                Codec.doubleRange(0.0, 1.0).optionalFieldOf("chance", 1.0).forGetter(EffectApplication::chance)
+        ).apply(i, EffectApplication::new));
+    }
+
+    /**
+     * Fighting behaviour.
+     *
+     * @param type      "none", "melee" or "ranged" - decides which attack goal is added
+     * @param range     how close it tries to get before attacking
+     * @param cooldown  ticks between attacks
+     * @param accuracy  0..100 spread for ranged attacks
+     * @param onHit     custom effects its hits inflict
+     */
     public record Combat(String type, double range, int cooldown, double speed,
                          double knockback, double accuracy, double meleeRange,
-                         Optional<String> projectile, double projectileSpeed) {
+                         Optional<String> projectile, double projectileSpeed,
+                         List<EffectApplication> onHit) {
         public static final Codec<Combat> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.STRING.optionalFieldOf("type", "none").forGetter(Combat::type),
                 Codec.DOUBLE.optionalFieldOf("range", 2.0).forGetter(Combat::range),
@@ -89,7 +141,9 @@ public record EntityDefinition(
                 Codec.DOUBLE.optionalFieldOf("accuracy", 90.0).forGetter(Combat::accuracy),
                 Codec.DOUBLE.optionalFieldOf("melee_range", 4.0).forGetter(Combat::meleeRange),
                 Codec.STRING.optionalFieldOf("projectile").forGetter(Combat::projectile),
-                Codec.DOUBLE.optionalFieldOf("projectile_speed", 1.6).forGetter(Combat::projectileSpeed)
+                Codec.DOUBLE.optionalFieldOf("projectile_speed", 1.6).forGetter(Combat::projectileSpeed),
+                EffectApplication.CODEC.listOf()
+                        .optionalFieldOf("on_hit", List.of()).forGetter(Combat::onHit)
         ).apply(i, Combat::new));
     }
 
@@ -106,6 +160,7 @@ public record EntityDefinition(
         ).apply(i, Interaction::new));
     }
 
+    /** Death drops: a vanilla loot table plus a flat XP reward. */
     public record Loot(Optional<Identifier> lootTable, int xp) {
         public static final Codec<Loot> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Identifier.CODEC.optionalFieldOf("loot_table").forGetter(Loot::lootTable),
@@ -113,6 +168,10 @@ public record EntityDefinition(
         ).apply(i, Loot::new));
     }
 
+    /**
+     * Whether the entity may despawn like a natural mob.
+     * Defaults to false, so hand-placed quest NPCs stay put.
+     */
     public record Persistence(boolean despawn) {
         public static final Codec<Persistence> CODEC = RecordCodecBuilder.create(i -> i.group(
                 Codec.BOOL.optionalFieldOf("despawn", false).forGetter(Persistence::despawn)

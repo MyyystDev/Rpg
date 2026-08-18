@@ -9,8 +9,16 @@ import net.minecraft.resources.Identifier;
 
 import java.util.List;
 
+/**
+ * Every custom packet the entities mod sends - the counterpart of core's {@code RpgPayloads}.
+ *
+ * <p>Direction is noted per payload: S2C = server to client, C2S = client to server.
+ * As in core, the editor payloads carry raw JSON text so the client can edit definitions
+ * without any datapack access.</p>
+ */
 public final class EntitiesPayloads {
 
+    /** Shorthand for a packet id in this mod's namespace. */
     private static Identifier id(String path) {
         return Identifier.fromNamespaceAndPath(MyrpgEntities.MOD_ID, path);
     }
@@ -77,5 +85,6 @@ public final class EntitiesPayloads {
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    /** Static holder for the payload records: never instantiated. */
     private EntitiesPayloads() {}
 }

@@ -41,37 +41,61 @@ import java.util.List;
  * property forms bound straight to the working JsonObject, header with
  * UNSAVED / SPAWN / SAVE. AI shows a read-only priority list for now
  * (goal dialogs are the next slice); the live 3D preview panel follows.
+ *
+ * <p>The richest editor of the three. What sets it apart from the stat and effect editors:</p>
+ * <ul>
+ *   <li>a live 3D preview - an off-world {@code RpgEntity} rebuilt whenever the appearance
+ *       fields change, so the author sees the real model, texture, scale and gear;</li>
+ *   <li>a component model: the nav column lists only the sections the definition actually
+ *       has, and "+ ADD COMPONENT" adds a new one, matching the JSON's optional blocks.</li>
+ * </ul>
+ *
+ * <p>As in the other editors, every control writes straight into {@code entry.json}
+ * and saving is an explicit action.</p>
  */
 public class EntityEditorScreen extends Screen {
 
+    /** Compact form, used for what goes over the wire. */
     private static final Gson GSON = new Gson();
+    /** Indented form, used for the raw-JSON view on the ADVANCED page. */
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().create();
+    // Allowed values for the cycle controls; these mirror what the codecs accept.
     private static final String[] MODELS = {
             "myrpg_entities:humanoid", "myrpg_entities:humanoid_slim",
             "myrpg_entities:zombie", "myrpg_entities:skeleton"};
     private static final String[] COMBAT_TYPES = {"none", "melee", "ranged", "hybrid"};
     private static final String[] MOVEMENT_TYPES = {"ground", "stationary"};
 
+    /** One page per optional component of the definition, plus GENERAL and ADVANCED. */
     private enum Page {GENERAL, APPEARANCE, ATTRIBUTES, MOVEMENT, COMBAT, EQUIPMENT, AI, DROPS, ADVANCED}
 
     private final EntityBrowserScreen parent;
+    /** The entity being edited; its {@code json} is mutated directly. */
     private final EntityWorkingSet.Entry entry;
     private Page page = Page.GENERAL;
 
+    // layout — all computed in init(), so the screen re-centres on resize
     private int px, py, pw, ph, navW, previewW;
     private int frameTop, frameBottom, wellX, wellY, wellW, wellH;
     private int prevX, prevY, prevH;
     private int listScroll, advScroll;
+    /** Client-side, never-added entity used purely to draw the preview. */
     private RpgEntity previewEntity;
+    /** Fingerprint of the appearance fields; a change here means the preview must be rebuilt. */
     private String previewKey = "";
+    /** Preview rotation, draggable with the slider under the panel. */
     private float previewYaw;
     private boolean draggingYaw;
+    /** Result of the last validation run, shown on the ADVANCED page. */
     private java.util.List<EntityValidator.Issue> issues = new java.util.ArrayList<>();
+    /** Ticks until the next validation pass - revalidating every frame would be wasteful. */
     private int validateCooldown;
     private int jsonTopCached;
     private int navScroll;
+    /** True while the "add component" picker overlay is open. */
     private boolean addPicking;
     private int attrScroll;
+    /** True while the "add attribute" picker overlay is open. */
     private boolean attrPicking;
     private int attrPickScroll;
     private EditBox attrSearchBox;
@@ -86,6 +110,7 @@ public class EntityEditorScreen extends Screen {
 
     // ------------------------------------------------------------ layout
 
+    /** Computes the four zones (header, nav, content well, preview) and builds widgets. */
     @Override
     protected void init() {
         pw = Math.min(width - 2 * PanelStyle.GRID, 660);
@@ -123,6 +148,7 @@ public class EntityEditorScreen extends Screen {
         }
     }
 
+    /** Switches page: resets scroll state and rebuilds that page's widgets. */
     private void setPage(Page newPage) {
         page = newPage;
         listScroll = 0;
@@ -134,6 +160,7 @@ public class EntityEditorScreen extends Screen {
         buildPageWidgets();
     }
 
+    /** Creates the text fields for the current page; button-only pages add nothing. */
     private void buildPageWidgets() {
         int half = wellW / 2;
         switch (page) {
@@ -206,6 +233,10 @@ public class EntityEditorScreen extends Screen {
 
     // ------------------------------------------------------------ field factories
 
+    /**
+     * Text field bound to a dotted JSON path, writing on every keystroke.
+     * Clearing the box removes the key, keeping optional fields absent from the saved file.
+     */
     private void addFieldAt(String path, String fallback, int x, int y, int w) {
         EditBox box = new EditBox(font, x, y, w, 18, Component.empty());
         box.setValue(path.equals("__id") ? entry.entityId
@@ -223,6 +254,7 @@ public class EntityEditorScreen extends Screen {
         addRenderableWidget(box);
     }
 
+    /** Numeric field; unparseable text is ignored so a half-typed number never clobbers the value. */
     private void addNumberField(String path, double fallback, int x, int y, int w) {
         EditBox box = new EditBox(font, x, y, w, 18, Component.empty());
         box.setValue(trimNum(JsonEdit.getDouble(entry.json, path, fallback)));
@@ -235,6 +267,7 @@ public class EntityEditorScreen extends Screen {
         addRenderableWidget(box);
     }
 
+    /** Multi-line description box, taller than the standard field. */
     private void addDescriptionField(int x, int y, int w, int h) {
         MultiLineEditBox box = MultiLineEditBox.builder()
                 .setX(x).setY(y)
@@ -252,6 +285,7 @@ public class EntityEditorScreen extends Screen {
         addRenderableWidget(box);
     }
 
+    /** Comma-separated text field backed by the JSON "tags" array. */
     private void addTagsField(int x, int y, int w) {
         EditBox box = new EditBox(font, x, y, w, 18, Component.empty());
         StringBuilder sb = new StringBuilder();
@@ -277,12 +311,14 @@ public class EntityEditorScreen extends Screen {
         addRenderableWidget(box);
     }
 
+    /** Drops the ".0" from whole numbers so fields show what the author typed. */
     private static String trimNum(double d) {
         return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(d);
     }
 
     // ------------------------------------------------------------ render
 
+    /** Draws the shell (header, nav, preview) and then the current page inside the well. */
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
         g.fill(0, 0, width, height, PanelStyle.SCREEN_DIM);
@@ -316,6 +352,10 @@ public class EntityEditorScreen extends Screen {
         if (addPicking) renderAddPicker(g, mouseX, mouseY);
     }
 
+    /**
+     * Live preview panel. Rebuilds the throwaway entity only when the appearance
+     * fingerprint changes, then draws it at the current yaw with the configured gear.
+     */
     private void renderPreview(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         // the preview lives in its own frame, separate from the page well
         PanelStyle.inset(g, prevX - 6, frameTop, previewW + 12, frameBottom - frameTop);
@@ -393,6 +433,7 @@ public class EntityEditorScreen extends Screen {
     private int sliderW() { return previewW - 16; }
     private int sliderY() { return prevY + prevH - 22; }
 
+    /** Maps a mouse x on the rotation slider to a yaw in 0..360. */
     private void setYawFromMouse(double mx) {
         float f = (float) (mx - sliderX()) / (float) (sliderW() - 2);
         float yaw = Math.max(-180.0f, Math.min(180.0f, f * 360.0f - 180.0f));
@@ -402,6 +443,7 @@ public class EntityEditorScreen extends Screen {
     }
 
     /** Slider-driven variant of InventoryScreen's GUI entity render. */
+    /** Draws the preview entity into the GUI at the given size and position. */
     private void renderPreviewEntity(GuiGraphicsExtractor g, int size,
                                      int x0, int y0, int x1, int y1) {
         EntityRenderDispatcher dispatcher = Minecraft.getInstance().getEntityRenderDispatcher();
@@ -422,6 +464,7 @@ public class EntityEditorScreen extends Screen {
         g.entity(state, size, translation, pose, null, x0, y0, x1, y1);
     }
 
+    /** Puts the definition's gear onto the preview entity so armour and weapons show up. */
     private void applyPreviewEquipment(String equipKey) {
         for (EquipmentSlot slot : EquipmentSlot.values()) {
             previewEntity.setItemSlot(slot, ItemStack.EMPTY);
@@ -436,6 +479,7 @@ public class EntityEditorScreen extends Screen {
         previewEquip(eq, "feet", EquipmentSlot.FEET);
     }
 
+    /** Equips one preview slot; unknown item ids are silently skipped. */
     private void previewEquip(JsonObject eq, String key, EquipmentSlot slot) {
         if (!eq.has(key)) return;
         Identifier id = Identifier.tryParse(eq.get(key).getAsString());
@@ -445,6 +489,7 @@ public class EntityEditorScreen extends Screen {
         }
     }
 
+    /** Header strip: back arrow, entity name, UNSAVED chip, SPAWN and SAVE buttons. */
     private void renderHeader(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int hy = py + PanelStyle.GRID;
         PanelStyle.button(g, font, "<", px + PanelStyle.GRID, hy, 20,
@@ -479,6 +524,7 @@ public class EntityEditorScreen extends Screen {
             PanelStyle.ERROR, 0xFF5B9BD5, PanelStyle.EDITED,
             0xFF57B3A0, PanelStyle.VALID, PanelStyle.ACCENT};
 
+    /** The "attributes" object, created empty on first use. */
     private JsonObject attributesObj() {
         if (!entry.json.has("attributes") || !entry.json.get("attributes").isJsonObject()) {
             entry.json.add("attributes", new JsonObject());
@@ -498,12 +544,14 @@ public class EntityEditorScreen extends Screen {
         return wellY + 30 + visibleIndex * ATTR_ROW;
     }
 
+    /** Turns "minecraft:movement_speed" into a readable "Movement Speed" label. */
     private static String prettyAttribute(String key) {
         String path = key.contains(":") ? key.split(":", 2)[1] : key;
         return path.replace('_', ' ').replace('.', ' ').toUpperCase();
     }
 
     /** Registry attributes not yet on this entity (minecraft first, sorted). */
+    /** Registered attributes the definition does not set yet - the picker's candidate list. */
     private java.util.List<Identifier> missingAttributes() {
         java.util.Set<String> present = attributesObj().keySet();
         return BuiltInRegistries.ATTRIBUTE.keySet().stream()
@@ -559,6 +607,7 @@ public class EntityEditorScreen extends Screen {
                 .toList();
     }
 
+    /** Adds an attribute to the definition, seeded with its vanilla default value. */
     private void addAttribute(Identifier id) {
         double fallback = BuiltInRegistries.ATTRIBUTE.get(id)
                 .map(h -> h.value().getDefaultValue()).orElse(1.0);
@@ -579,6 +628,7 @@ public class EntityEditorScreen extends Screen {
     // ---------------------------------------------------------- components
 
     /** JSON section backing each optional component page; null = always shown. */
+    /** JSON key each page edits, which is how "does this component exist" is decided. */
     private static String sectionFor(Page p) {
         return switch (p) {
             case APPEARANCE -> "appearance";
@@ -592,6 +642,7 @@ public class EntityEditorScreen extends Screen {
         };
     }
 
+    /** True when the definition contains this page's section. */
     private boolean hasComponent(Page p) {
         String key = sectionFor(p);
         if (key == null) return true;
@@ -599,18 +650,21 @@ public class EntityEditorScreen extends Screen {
         return entry.json.has(key);
     }
 
+    /** Pages shown in the nav column: the ones this definition actually has. */
     private java.util.List<Page> presentPages() {
         java.util.List<Page> pages = new java.util.ArrayList<>();
         for (Page p : Page.values()) if (hasComponent(p)) pages.add(p);
         return pages;
     }
 
+    /** Pages offered by "+ ADD COMPONENT": the ones this definition lacks. */
     private java.util.List<Page> missingPages() {
         java.util.List<Page> pages = new java.util.ArrayList<>();
         for (Page p : Page.values()) if (!hasComponent(p)) pages.add(p);
         return pages;
     }
 
+    /** Creates an empty section for the page and switches to it. */
     private void addComponent(Page p) {
         String key = sectionFor(p);
         if (key != null && !entry.json.has(key)) {
@@ -633,6 +687,7 @@ public class EntityEditorScreen extends Screen {
     private int navAddY() { return frameBottom - PanelStyle.CONTROL_H - 6; }
     private int navVisibleRows() { return Math.max(1, (navDividerY() - 4 - navTop()) / NAV_ROW); }
 
+    /** Nav column: present components, then the divider and the add button. */
     private void renderNav(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         java.util.List<Page> pages = presentPages();
         int rows = navVisibleRows();
@@ -666,6 +721,7 @@ public class EntityEditorScreen extends Screen {
                 0xFF57B36A, 0xFF6FCB82, 0xFF9FE0AC);
     }
 
+    /** Overlay listing the components this definition does not have yet. */
     private void renderAddPicker(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         java.util.List<Page> missing = missingPages();
         int w = 160, h = 30 + Math.max(1, missing.size()) * 18 + 8;
@@ -685,6 +741,7 @@ public class EntityEditorScreen extends Screen {
         }
     }
 
+    /** GENERAL page: name, id, description, tags and the name-plate toggle. */
     private void renderGeneral(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("DISPLAY NAME"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
         g.text(font, Component.literal("RESOURCE ID"), wellX + 8, wellY + 44, PanelStyle.TEXT_DIM);
@@ -693,6 +750,7 @@ public class EntityEditorScreen extends Screen {
         renderCheckbox(g, mouseX, mouseY, "Visible nameplate", visible, wellX + 8, wellY + 156);
     }
 
+    /** APPEARANCE page: model, texture, scale, hitbox and glow - all mirrored in the preview. */
     private void renderAppearance(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("MODEL"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
         String model = JsonEdit.getString(entry.json, "appearance.model", MODELS[0]);
@@ -713,6 +771,7 @@ public class EntityEditorScreen extends Screen {
         renderCheckbox(g, mouseX, mouseY, "Glow outline", glow, wellX + 8, wellY + 140);
     }
 
+    /** ATTRIBUTES page: one row per configured attribute, plus an add button. */
     private void renderAttributes(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int addW = 104;
         PanelStyle.button(g, font, "+ ADD ATTRIBUTE", wellX + 8, wellY, addW,
@@ -759,6 +818,7 @@ public class EntityEditorScreen extends Screen {
                 keys.size(), rows, attrScroll);
     }
 
+    /** Searchable overlay of attributes the definition does not set yet. */
     private void renderAttrPicker(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         java.util.List<Identifier> filtered = filteredMissingAttributes();
         int w = pickerW(), cx = pickerX(), cy = pickerY(), h = pickerH();
@@ -790,6 +850,7 @@ public class EntityEditorScreen extends Screen {
 
     }
 
+    /** MOVEMENT page: navigator type and the capability flags. */
     private void renderMovement(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("MOVEMENT TYPE"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
         String type = JsonEdit.getString(entry.json, "movement.type", "ground");
@@ -839,6 +900,10 @@ public class EntityEditorScreen extends Screen {
         g.text(font, Component.literal(text), x, y, PanelStyle.TEXT_DIM);
     }
 
+    /**
+     * COMBAT page. The visible rows depend on the combat type - ranged shows projectile
+     * fields, melee does not - which is why the row helpers above take the type.
+     */
     private void renderCombat(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int half = wellW / 2;
         g.text(font, Component.literal("COMBAT TYPE"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
@@ -879,6 +944,7 @@ public class EntityEditorScreen extends Screen {
         }
     }
 
+    /** EQUIPMENT page: one text field per slot. */
     private void renderEquipment(GuiGraphicsExtractor g) {
         int half = wellW / 2;
         String[][] slots = {
@@ -903,6 +969,11 @@ public class EntityEditorScreen extends Screen {
     // ---------------------------------------------------------- AI page (design book 12)
 
     /** One visual row: an AI goal, the TARGETING header, or a target rule. */
+    /**
+     * One row of the AI page. The list interleaves both arrays, so {@code kind} says which
+     * ("ai" or "targeting") and {@code arrayIndex} the position inside it; a null {@code obj}
+     * marks a section header rather than a real entry.
+     */
     private record AiRow(String kind, int arrayIndex, @org.jspecify.annotations.Nullable JsonObject obj) {}
 
     private static final int AI_ROW = 24;
@@ -955,6 +1026,7 @@ public class EntityEditorScreen extends Screen {
         return Math.max(1, (wellH - 34) / AI_ROW);
     }
 
+    /** AI page: goals and targeting rules as one priority-ordered list. */
     private void renderAi(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("AI GOALS"), wellX + 8, wellY + 6, PanelStyle.TEXT_DIM);
         int addW = 72;
@@ -1054,11 +1126,13 @@ public class EntityEditorScreen extends Screen {
         return y;
     }
 
+    /** DROPS page: loot table id and XP reward. */
     private void renderDrops(GuiGraphicsExtractor g) {
         g.text(font, Component.literal("LOOT TABLE (blank = none)"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
         g.text(font, Component.literal("XP"), wellX + 8, wellY + 44, PanelStyle.TEXT_DIM);
     }
 
+    /** ADVANCED page: the validation report plus a read-only pretty-printed JSON view. */
     private void renderAdvanced(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("TAGS (comma-separated)"), wellX + 8, wellY + 4, PanelStyle.TEXT_DIM);
         boolean despawn = JsonEdit.getBool(entry.json, "persistence.despawn", false);
@@ -1107,6 +1181,7 @@ public class EntityEditorScreen extends Screen {
                 lines.length, maxLines, advScroll);
     }
 
+    /** Labelled checkbox; the click handling lives in {@link #mouseClicked}. */
     private void renderCheckbox(GuiGraphicsExtractor g, int mouseX, int mouseY,
                                 String label, boolean value, int x, int y) {
         PanelStyle.inset(g, x, y, 12, 12);
@@ -1118,6 +1193,14 @@ public class EntityEditorScreen extends Screen {
 
     // ------------------------------------------------------------ input
 
+    /**
+     * All hit-testing for the immediate-mode controls, dispatched per page.
+     *
+     * <p>Long by nature: buttons, checkboxes, list rows and the two picker overlays are
+     * drawn directly rather than as widgets, so every clickable region is re-derived here
+     * from the same geometry the render methods use. Overlays are checked first, since
+     * they are modal.</p>
+     */
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x(), my = event.y();
@@ -1343,11 +1426,13 @@ public class EntityEditorScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /** Flips a boolean at a dotted path and marks the entry dirty. */
     private void toggleBool(String path, boolean fallback) {
         JsonEdit.set(entry.json, path, !JsonEdit.getBool(entry.json, path, fallback));
         entry.dirty = true;
     }
 
+    /** Re-runs validation on a cooldown rather than every frame, and drives the search box. */
     @Override
     public void tick() {
         if (--validateCooldown <= 0) {
@@ -1363,6 +1448,11 @@ public class EntityEditorScreen extends Screen {
         }
     }
 
+    /**
+     * Validates and, if clean, sends the definition to the server.
+     * Errors abort the save and jump to the ADVANCED page, where the issue list is shown;
+     * warnings do not block.
+     */
     private void save() {
         issues = EntityValidator.validate(entry);
         if (EntityValidator.hasErrors(issues)) {
@@ -1387,6 +1477,7 @@ public class EntityEditorScreen extends Screen {
         entry.dirty = false;   // server replies with saved/failed feedback in chat
     }
 
+    /** Dragging only matters for the preview rotation slider. */
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) {
         if (draggingYaw) {
@@ -1405,6 +1496,7 @@ public class EntityEditorScreen extends Screen {
         return super.mouseReleased(event);
     }
 
+    /** Scrolling is routed to whichever list the cursor is over (nav, attributes, AI, JSON). */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontal, double vertical) {
         if (attrPicking) {
@@ -1448,6 +1540,7 @@ public class EntityEditorScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, horizontal, vertical);
     }
 
+    /** Editing must not pause a singleplayer world - the live preview keeps animating. */
     @Override
     public boolean isPauseScreen() {
         return false;

@@ -11,14 +11,24 @@ import net.minecraft.network.chat.Component;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Searchable effect catalog: rows of friendly label + raw id, by category. */
+/**
+ * Searchable effect catalog: rows of friendly label + raw id, by category.
+ *
+ * <p>Step one of adding a stage effect: pick the type here, then
+ * {@link EffectConfigScreen} fills in its fields. The screen returns to {@code parent}
+ * either way, and only the config screen actually writes into the stage.</p>
+ */
 public class EffectPickerScreen extends Screen {
 
+    /** Screen to return to; also the owner of the definition being edited. */
     private final StatEditorScreen parent;
+    /** The stage object the chosen effect will be appended to. */
     private final JsonObject stage;
     private EditBox searchBox;
+    /** Schemas matching the current search text, rebuilt every tick. */
     private final List<EffectSchemas.EffectSchema> visible = new ArrayList<>();
     private int selected = -1;
+    /** Panel geometry, recomputed in init() so the dialog stays centred on resize. */
     private int px, py, pw, ph;
 
     public EffectPickerScreen(StatEditorScreen parent, JsonObject stage) {
@@ -37,6 +47,7 @@ public class EffectPickerScreen extends Screen {
         refilter();
     }
 
+    /** Rebuilds the visible list from the search box; matches label or type id. */
     private void refilter() {
         visible.clear();
         String query = searchBox == null ? "" : searchBox.getValue().toLowerCase();
@@ -46,9 +57,11 @@ public class EffectPickerScreen extends Screen {
                 visible.add(schema);
             }
         }
+        // Keep the selection inside the new list rather than losing it on every keystroke.
         selected = visible.isEmpty() ? -1 : Math.min(Math.max(selected, 0), visible.size() - 1);
     }
 
+    /** Cheap enough to refilter every tick, which keeps the list live as the user types. */
     @Override
     public void tick() { refilter(); }
 
@@ -58,6 +71,7 @@ public class EffectPickerScreen extends Screen {
         PanelStyle.panel(g, px, py, pw, ph);
         g.text(font, Component.literal("ADD EFFECT"), px + PanelStyle.GRID, py + PanelStyle.GRID, PanelStyle.TEXT);
 
+        // Rows are drawn until they would collide with the button strip at the bottom.
         int ry = py + 54;
         for (int i = 0; i < visible.size() && ry < py + ph - 44; i++) {
             var schema = visible.get(i);
@@ -79,6 +93,10 @@ public class EffectPickerScreen extends Screen {
         super.extractRenderState(g, mouseX, mouseY, delta);
     }
 
+    /**
+     * Hit-testing mirrors the layout in {@code extractRenderState} - the rows are drawn
+     * immediately, not backed by widgets, so both methods must walk the same geometry.
+     */
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x(), my = event.y();
@@ -102,6 +120,7 @@ public class EffectPickerScreen extends Screen {
         return super.mouseClicked(event, doubleClick);
     }
 
+    /** Opens the config form for the selected type in "add" mode (existing == null). */
     private void configure() {
         if (selected >= 0) {
             Minecraft.getInstance().gui.setScreen(
@@ -109,6 +128,7 @@ public class EffectPickerScreen extends Screen {
         }
     }
 
+    /** Editing must not pause a singleplayer world - the game keeps running behind it. */
     @Override
     public boolean isPauseScreen() { return false; }
 }

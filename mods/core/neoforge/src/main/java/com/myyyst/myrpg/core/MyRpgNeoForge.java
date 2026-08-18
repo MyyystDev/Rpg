@@ -1,7 +1,9 @@
 package com.myyyst.myrpg.core;
 
 import com.myyyst.myrpg.core.client.ClientEvents;
+import com.myyyst.myrpg.core.client.ClientEffectCache;
 import com.myyyst.myrpg.core.client.ClientStatCache;
+import com.myyyst.myrpg.core.client.EffectEditorClient;
 import com.myyyst.myrpg.core.client.StatEditorClient;
 import com.myyyst.myrpg.core.client.editor.ClientEditorNet;
 import com.myyyst.myrpg.core.command.RpgCommands;
@@ -30,27 +32,45 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
+/**
+ * NeoForge entry point for the core mod - the counterpart of {@code MyRpgFabric}.
+ *
+ * <p>NeoForge splits events across two buses, and the distinction matters throughout this
+ * class: the <em>mod bus</em> (the constructor's {@code eventBus}) carries setup events like
+ * payload registration, while the <em>game bus</em> ({@code NeoForge.EVENT_BUS}) carries
+ * runtime events like ticks and deaths.</p>
+ */
 @Mod(Constants.MOD_ID)
 public class MyRpgNeoForge {
+    /** Called by FML with this mod's own event bus. */
     public MyRpgNeoForge(IEventBus eventBus) {
         Constants.LOG.info("Hello NeoForge world!");
-        MyRpgCommon.init();
+        MyRpgCommon.init();   // registries + commands, shared with Fabric
 
-        eventBus.addListener(MyRpgNeoForge::onRegisterPayloads);
+        eventBus.addListener(MyRpgNeoForge::onRegisterPayloads);   // mod bus: setup
 
+        // Client-only wiring. The dist check keeps a dedicated server from ever touching
+        // client classes, which would fail to load there.
         if (net.neoforged.fml.loading.FMLEnvironment.getDist() == Dist.CLIENT) {
             ClientEditorNet.sender = ClientPacketDistributor::sendToServer;
-            eventBus.register(ClientEvents.class);
+            eventBus.register(ClientEvents.class);              // mod bus: HUD registration
+            NeoForge.EVENT_BUS.register(ClientEvents.Game.class); // game bus: ticks, logout
         }
 
-        NeoForge.EVENT_BUS.register(GameEvents.class);
+        NeoForge.EVENT_BUS.register(GameEvents.class);   // game bus: runtime events
     }
 
+    /**
+     * Registers every packet type together with its handler.
+     * Unlike Fabric, NeoForge takes codec and handler in one call; "1" is the protocol
+     * version, which clients must match to connect.
+     */
     private static void onRegisterPayloads(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar("1");
 
         // ---- Clientbound (server -> client) ----
 
+        // enqueueWork hops from the network thread onto the game thread before touching state.
         registrar.playToClient(
                 RpgPayloads.SyncStats.TYPE,
                 RpgPayloads.SyncStats.STREAM_CODEC,
@@ -58,6 +78,11 @@ public class MyRpgNeoForge {
                         () -> ClientStatCache.accept(payload)));
         registrar.playToClient(RpgPayloads.OpenStatEditor.TYPE, RpgPayloads.OpenStatEditor.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> StatEditorClient.open(payload)));
+        registrar.playToClient(RpgPayloads.SyncEffects.TYPE, RpgPayloads.SyncEffects.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(
+                        () -> ClientEffectCache.accept(payload)));
+        registrar.playToClient(RpgPayloads.OpenEffectEditor.TYPE, RpgPayloads.OpenEffectEditor.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> EffectEditorClient.open(payload)));
 
         // ---- Serverbound (client -> server) ----
 
@@ -69,13 +94,24 @@ public class MyRpgNeoForge {
                 (payload, context) -> context.enqueueWork(() -> {
                     if (context.player() instanceof ServerPlayer sp) EditorNet.handleDelete(sp, payload);
                 }));
+        registrar.playToServer(RpgPayloads.SaveEffect.TYPE, RpgPayloads.SaveEffect.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> {
+                    if (context.player() instanceof ServerPlayer sp) EditorNet.handleSaveEffect(sp, payload);
+                }));
+        registrar.playToServer(RpgPayloads.DeleteEffect.TYPE, RpgPayloads.DeleteEffect.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> {
+                    if (context.player() instanceof ServerPlayer sp) EditorNet.handleDeleteEffect(sp, payload);
+                }));
     }
 
-    /** Game-bus events, forwarded into common code. */
+    /**
+     * Game-bus events, forwarded into common code.
+     * Every handler here mirrors one in {@code MyRpgFabric}, so behaviour stays identical
+     * across loaders.
+     */
     public static class GameEvents {
 
-
-
+        /** Hooks the datapack loaders into /reload; without this CoreData stays empty. */
         @SubscribeEvent
         public static void onAddReloadListeners(AddServerReloadListenersEvent event) {
             event.addListener(
@@ -89,11 +125,13 @@ public class MyRpgNeoForge {
                     CoreData.EFFECTS);
         }
 
+        /** The server heartbeat: stat rules, effect ticking, client syncs. */
         @SubscribeEvent
         public static void onServerTick(ServerTickEvent.Post event) {
             PlayerStatTicker.tick(event.getServer());
         }
 
+        /** Join: rebuild stage effects and push a full HUD sync, then post the event. */
         @SubscribeEvent
         public static void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
@@ -102,6 +140,7 @@ public class MyRpgNeoForge {
             }
         }
 
+        /** Respawn: apply each stat's persistence rules to the new player entity. */
         @SubscribeEvent
         public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
@@ -112,6 +151,7 @@ public class MyRpgNeoForge {
 
         // Custom-effect restrictions: can_attack / can_use_items
 
+        /** Blocks attacking while a restriction effect is active. */
         @SubscribeEvent
         public static void onAttackEntity(AttackEntityEvent event) {
             if (event.getEntity() instanceof ServerPlayer player
@@ -120,6 +160,7 @@ public class MyRpgNeoForge {
             }
         }
 
+        /** Blocks item use while a restriction effect is active. */
         @SubscribeEvent
         public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
             if (event.getEntity() instanceof ServerPlayer player
@@ -128,12 +169,14 @@ public class MyRpgNeoForge {
             }
         }
 
+        /** Death: one death event for the victim, plus a kill event when a player did it. */
         @SubscribeEvent
         public static void onLivingDeath(LivingDeathEvent event) {
             if (event.getEntity() instanceof ServerPlayer player) {
                 EffectManager.onDeath(player);
                 RpgEvents.post(new RpgEvents.GameEvent(RpgEvents.PLAYER_DEATH, player, null));
             }
+            // getEntity() != killer excludes suicide from counting as a kill
             if (event.getSource().getEntity() instanceof ServerPlayer killer
                     && event.getEntity() != killer) {
                 RpgEvents.post(new RpgEvents.GameEvent(RpgEvents.PLAYER_KILL, killer, event.getEntity()));

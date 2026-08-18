@@ -6,6 +6,10 @@ import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+/**
+ * NeoForge implementation of {@code INetworkHelper}.
+ * Registered via {@code META-INF/services} and loaded by {@code Services.NETWORK}.
+ */
 public class NeoForgeNetworkHelper implements INetworkHelper {
 
     @Override

@@ -18,15 +18,18 @@ public class GuardPositionGoal extends Goal {
 
     private final RpgEntity mob;
     private final double speed;
+    /** Squared, so the check needs no square root. */
     private final double radiusSqr;
 
     public GuardPositionGoal(RpgEntity mob, double speed, double radius) {
         this.mob = mob;
         this.speed = speed;
         this.radiusSqr = radius * radius;
+        // Only claims MOVE, so the guard can still look around while walking back.
         setFlags(EnumSet.of(Goal.Flag.MOVE));
     }
 
+    /** False when the entity has no anchor at all, which disables the goal entirely. */
     private boolean outsideRadius() {
         BlockPos anchor = mob.guardAnchor();
         return anchor != null && mob.blockPosition().distSqr(anchor) > radiusSqr;
@@ -42,6 +45,7 @@ public class GuardPositionGoal extends Goal {
         return outsideRadius() && !mob.getNavigation().isDone();
     }
 
+    /** Paths back to the anchor's block centre (+0.5) rather than its corner. */
     @Override
     public void start() {
         BlockPos anchor = mob.guardAnchor();

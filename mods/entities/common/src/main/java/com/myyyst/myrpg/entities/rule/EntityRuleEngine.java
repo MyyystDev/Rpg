@@ -41,6 +41,7 @@ public final class EntityRuleEngine {
         }
     }
 
+    /** Logical AND over a rule's conditions; public because interactions reuse it. */
     public static boolean allPass(List<RpgCondition> conditions, RpgCondition.ConditionContext ctx) {
         for (RpgCondition condition : conditions) {
             if (!condition.test(ctx)) return false;
@@ -48,11 +49,13 @@ public final class EntityRuleEngine {
         return true;
     }
 
+    /** Runs an action list in order; public because interactions reuse it. */
     public static void run(List<RpgAction> actions, RpgAction.ActionContext ctx) {
         for (RpgAction action : actions) {
             action.execute(ctx);
         }
     }
 
+    /** Static-only engine: never instantiated. */
     private EntityRuleEngine() {}
 }

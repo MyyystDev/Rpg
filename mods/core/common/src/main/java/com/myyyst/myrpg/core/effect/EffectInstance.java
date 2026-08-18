@@ -9,15 +9,23 @@ import org.jspecify.annotations.Nullable;
 import java.util.Optional;
 import java.util.UUID;
 
-/** One active effect on one entity. Definition data stays in the datapack. */
+/**
+ * One active effect on one entity. Definition data stays in the datapack.
+ *
+ * <p>Mutable by design - {@code EffectManager} edits duration and stacks in place -
+ * which is why this is a class with public fields rather than a record. Nothing outside
+ * that manager should write to it.</p>
+ */
 public class EffectInstance {
 
+    /** Which definition this instance is an application of. */
     public final Identifier effectId;
     public int remaining;          // ticks; -1 = infinite
     public int level;              // strength tier, >= 1
     public int stacks;             // accumulated applications, >= 1
     @Nullable public UUID source;  // who applied it (kill attribution etc.)
 
+    /** Level and stacks are floored at 1, so a malformed pack cannot create a 0-stack effect. */
     public EffectInstance(Identifier effectId, int remaining, int level, int stacks,
                           @Nullable UUID source) {
         this.effectId = effectId;
@@ -27,8 +35,10 @@ public class EffectInstance {
         this.source = source;
     }
 
+    /** Negative remaining time marks an effect that never expires on its own. */
     public boolean infinite() { return remaining < 0; }
 
+    /** Save/wire form; the source UUID is optional. */
     public static final Codec<EffectInstance> CODEC = RecordCodecBuilder.create(i -> i.group(
             Identifier.CODEC.fieldOf("id").forGetter(e -> e.effectId),
             Codec.INT.optionalFieldOf("remaining", -1).forGetter(e -> e.remaining),

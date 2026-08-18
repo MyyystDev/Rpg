@@ -18,9 +18,16 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Server side of the entity browser + editor. */
+/**
+ * Server side of the entity browser + editor.
+ *
+ * <p>Mirrors core's {@code EditorNet}, reusing its {@code OverlaySaver} for the actual
+ * permission checks, validation and writes, and adds one thing core has no equivalent of:
+ * spawning a definition straight from the browser.</p>
+ */
 public final class EntityEditorNet {
 
+    /** Datapack folder entity files are written to. Must match {@code EntitiesData.ENTITIES}. */
     public static final String ENTITIES_FOLDER = "myrpg/entities";
 
     /** C2S: validate through EntityDefinition.CODEC and write to the overlay pack. */
@@ -34,6 +41,7 @@ public final class EntityEditorNet {
         OverlaySaver.save(player, ENTITIES_FOLDER, entityId, payload.json(), EntityDefinition.CODEC);
     }
 
+    /** C2S: delete an editor-created entity file. */
     public static void handleDelete(ServerPlayer player, EntitiesPayloads.DeleteEntity payload) {
         Identifier entityId = Identifier.tryParse(payload.entityId());
         if (entityId == null) {
@@ -44,6 +52,10 @@ public final class EntityEditorNet {
         OverlaySaver.delete(player, ENTITIES_FOLDER, entityId);
     }
 
+    /**
+     * Re-encodes every loaded definition back to JSON for the client editor.
+     * Entries that fail to encode are simply omitted rather than breaking the whole list.
+     */
     private static List<EntitiesPayloads.EntityFile> collectFiles() {
         List<EntitiesPayloads.EntityFile> files = new ArrayList<>();
         for (var entry : EntitiesData.ENTITIES.all().entrySet()) {
@@ -82,11 +94,13 @@ public final class EntityEditorNet {
         if (!(player.level() instanceof ServerLevel level)) return;
         RpgEntity entity = RpgEntityTypes.rpg_entity().create(level, EntitySpawnReason.COMMAND);
         if (entity == null) return;
+        // Spawn on top of the requesting player, facing a random direction.
         entity.snapTo(player.getX(), player.getY(), player.getZ(),
                 level.getRandom().nextFloat() * 360.0f, 0.0f);
-        entity.applyDefinition(defId);
+        entity.applyDefinition(defId);   // full fresh-spawn setup
         level.addFreshEntity(entity);
     }
 
+    /** Static-only handler class: never instantiated. */
     private EntityEditorNet() {}
 }

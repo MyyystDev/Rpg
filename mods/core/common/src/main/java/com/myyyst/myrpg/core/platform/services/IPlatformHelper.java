@@ -1,5 +1,10 @@
 package com.myyyst.myrpg.core.platform.services;
 
+/**
+ * Loader-specific environment queries. Implemented once per loader
+ * ({@code FabricPlatformHelper}, {@code NeoForgePlatformHelper}) and reached through
+ * {@code Services.PLATFORM}.
+ */
 public interface IPlatformHelper {
 
     /**

@@ -18,38 +18,57 @@ import java.util.List;
  * nav column, content well. All page content renders — and is clipped —
  * inside the well; every page fits without scrolling (lists scroll
  * inside their own frames).
+ *
+ * <p>The main editing surface for one stat. The nav column switches between {@link Page}s,
+ * each of which renders into the same content well; {@link #buildPageWidgets()} recreates
+ * the text fields whenever the page changes, since only the current page's controls exist.</p>
+ *
+ * <p>Every field writes straight into {@code entry.json} through {@code JsonEdit}, so there
+ * is no separate apply step - {@code entry.pristine} keeps the state at open time so the
+ * screen can tell whether anything actually changed, and saving is an explicit action.</p>
  */
 public class StatEditorScreen extends Screen {
 
+    /** Compact form, used for what goes over the wire. */
     private static final Gson GSON = new Gson();
+    /** Indented form, used for the raw-JSON view on the ADVANCED page. */
     private static final Gson PRETTY = new GsonBuilder().setPrettyPrinting().create();
 
+    /** The nav column's entries; each maps to one render method and widget set. */
     enum Page { GENERAL, VALUE, STAGES, RULES, DISPLAY, ADVANCED }
 
     private final StatLibraryScreen parent;
     private final StatWorkingSet workingSet;
+    /** The stat being edited; its {@code json} is mutated directly. */
     private final StatWorkingSet.Entry entry;
     private Page page = Page.GENERAL;
 
-    // layout
+    // layout — all computed in init(), so the screen re-centres on resize
     private int px, py, pw, ph, navW;
     private int frameTop, frameBottom;
     private int wellFrameX1, wellFrameX2;
+    /** Inner content area of the well, where every page draws. */
     private int wellX, wellY, wellW, wellH;
 
+    /** Text fields belonging to the current page only; cleared on every page switch. */
     private final List<EditBox> pageBoxes = new ArrayList<>();
 
+    /** Value the live HUD preview is drawn at; draggable to see other stages. */
     private double previewValue = 60;
     private boolean draggingPreview;
 
+    /** Index of the stage open in the detail form, or -1 for none. */
     private int selectedStage = -1;
+    /** Stage threshold currently being dragged on the timeline, or -1. */
     private int draggingThreshold = -1;
     private int stageScroll;
     private int effectScroll;
     private int ruleScroll;
 
+    /** Result of the last {@code StatValidator} run, shown as chips per page. */
     private List<StatValidator.Issue> issues = new ArrayList<>();
 
+    /** True while the "you have unsaved changes" dialog is up. */
     private boolean confirmClose;
 
     public StatEditorScreen(StatLibraryScreen parent, StatWorkingSet workingSet, StatWorkingSet.Entry entry) {
@@ -57,11 +76,13 @@ public class StatEditorScreen extends Screen {
         this.parent = parent;
         this.workingSet = workingSet;
         this.entry = entry;
+        // Snapshot for the unsaved-changes check and for reverting.
         entry.pristine = entry.json == null ? null : entry.json.deepCopy();
     }
 
     // ------------------------------------------------------------ layout
 
+    /** Computes the three zones (header strip, nav column, content well) and builds widgets. */
     @Override
     protected void init() {
         pw = Math.min(width - 2 * PanelStyle.GRID, 520);
@@ -83,6 +104,7 @@ public class StatEditorScreen extends Screen {
         buildPageWidgets();
     }
 
+    /** Switches page: resets that page's scroll state and rebuilds its widgets. */
     private void setPage(Page newPage) {
         page = newPage;
         effectScroll = 0;
@@ -91,12 +113,19 @@ public class StatEditorScreen extends Screen {
         buildPageWidgets();
     }
 
+    /**
+     * Creates the text fields for the current page.
+     *
+     * <p>Pages that are drawn entirely with buttons and immediate-mode rows (RULES,
+     * ADVANCED, and most of STAGES) add nothing here.</p>
+     */
     private void buildPageWidgets() {
         pageBoxes.clear();
         int half = wellW / 2;
         switch (page) {
             case GENERAL -> {
                 addFieldAt("display.name", "", wellX + 8, wellY + 26, half - 16);
+                // "__id" is not a JSON path: it edits the entry's id rather than its content.
                 addFieldAt("__id", entry.statId, wellX + half + 8, wellY + 26, half - 16);
                 addFieldAt("display.description", "", wellX + 8, wellY + 66, wellW - 16);
                 addFieldAt("display.icon", "", wellX + 8, wellY + 106, half - 16);
@@ -118,6 +147,7 @@ public class StatEditorScreen extends Screen {
                 }
             }
             case DISPLAY -> {
+                // The threshold field only exists for the two visibility modes that use it.
                 String vis = JsonEdit.getString(entry.json, "hud.visibility", "always");
                 if (vis.equals("above_value") || vis.equals("below_value")) {
                     addNumberField("hud.visibility_value", 0, wellY + 62, 64, 320);
@@ -129,20 +159,24 @@ public class StatEditorScreen extends Screen {
 
     // ------------------------------------------------------------ json helpers
 
+    /** The "stages" array, created empty on first use. */
     private com.google.gson.JsonArray stages() {
         if (!entry.json.has("stages")) entry.json.add("stages", new com.google.gson.JsonArray());
         return entry.json.getAsJsonArray("stages");
     }
 
+    /** Stage at {@code index} in the stages array. */
     private com.google.gson.JsonObject stage(int index) {
         return stages().get(index).getAsJsonObject();
     }
 
+    /** One of a stage's arrays ("effects", "on_enter", "on_exit"), created empty on first use. */
     private com.google.gson.JsonArray stageArray(com.google.gson.JsonObject stage, String key) {
         if (!stage.has(key)) stage.add(key, new com.google.gson.JsonArray());
         return stage.getAsJsonArray(key);
     }
 
+    /** The "rules" array, created empty on first use. */
     private com.google.gson.JsonArray rulesArray() {
         if (!entry.json.has("rules")) entry.json.add("rules", new com.google.gson.JsonArray());
         return entry.json.getAsJsonArray("rules");
@@ -150,6 +184,13 @@ public class StatEditorScreen extends Screen {
 
     // ------------------------------------------------------------ widget builders
 
+    /**
+     * Text field bound to a dotted JSON path, writing on every keystroke.
+     *
+     * <p>Clearing the box removes the key entirely rather than storing an empty string,
+     * which keeps optional fields absent from the saved file. The pseudo-path
+     * {@code "__id"} edits the entry's resource id instead of its JSON.</p>
+     */
     private void addFieldAt(String path, String fallback, int x, int y, int w) {
         EditBox box = new EditBox(font, x, y, w, 18, Component.empty());
         String value = path.equals("__id") ? entry.statId
@@ -169,10 +210,15 @@ public class StatEditorScreen extends Screen {
         pageBoxes.add(box);
     }
 
+    /** Numeric field at the well's left edge. */
     private void addNumberField(String path, double fallback, int y, int w) {
         addNumberField(path, fallback, y, w, 0);
     }
 
+    /**
+     * Numeric field, offset from the well's left edge.
+     * Unparseable text is ignored, so a half-typed number never clobbers the value.
+     */
     private void addNumberField(String path, double fallback, int y, int w, int xOffset) {
         EditBox box = new EditBox(font, wellX + 8 + xOffset, y, w, 18, Component.empty());
         box.setValue(trimNum(JsonEdit.getDouble(entry.json, path, fallback)));
@@ -186,6 +232,10 @@ public class StatEditorScreen extends Screen {
         pageBoxes.add(box);
     }
 
+    /**
+     * Field bound to a path inside one stage object rather than the stat root.
+     * "min"/"max" are treated as numbers; everything else as optional text.
+     */
     private void addStageFieldAt(com.google.gson.JsonObject stage, String path, int x, int y, int w) {
         EditBox box = new EditBox(font, x, y, w, 18, Component.empty());
         boolean numeric = path.equals("min") || path.equals("max");
@@ -207,12 +257,14 @@ public class StatEditorScreen extends Screen {
         pageBoxes.add(box);
     }
 
+    /** Drops the ".0" from whole numbers so fields show what the author typed. */
     private static String trimNum(double d) {
         return d == Math.rint(d) ? String.valueOf((long) d) : String.valueOf(d);
     }
 
     // ------------------------------------------------------------ render
 
+    /** Draws the three zones, then the current page clipped inside the content well. */
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
         g.fill(0, 0, width, height, PanelStyle.SCREEN_DIM);
@@ -228,6 +280,8 @@ public class StatEditorScreen extends Screen {
                 wellFrameX2 - wellFrameX1, frameBottom - frameTop);
         g.fill(wellFrameX1 + 1, frameTop + 1, wellFrameX2 - 1, frameBottom - 1, PanelStyle.PANEL_BG);
 
+        // Scissor clips page content to the well, so a long list cannot bleed over the
+        // nav column or the header.
         // NOTE drift: scissor spelling — adjust or remove if g. lacks it.
         g.enableScissor(wellFrameX1 + 1, frameTop + 1, wellFrameX2 - 1, frameBottom - 1);
         switch (page) {
@@ -245,6 +299,7 @@ public class StatEditorScreen extends Screen {
         if (confirmClose) renderConfirmClose(g, mouseX, mouseY);
     }
 
+    /** Header strip: back arrow, stat name, UNSAVED chip, save button. */
     private void renderHeader(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int hy = py + PanelStyle.GRID;
         PanelStyle.button(g, font, "<", px + PanelStyle.GRID, hy, 20,
@@ -263,6 +318,7 @@ public class StatEditorScreen extends Screen {
                 px + pw - PanelStyle.GRID, py + PanelStyle.GRID * 4 + 4, PanelStyle.PANEL_LIGHT);
     }
 
+    /** Nav column: one row per {@link Page}, the current one highlighted. */
     private void renderNav(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int ny = frameTop + 6;
         for (Page p : Page.values()) {
@@ -279,6 +335,7 @@ public class StatEditorScreen extends Screen {
         }
     }
 
+    /** GENERAL page: name, id, description, icon and colour. */
     private void renderGeneral(GuiGraphicsExtractor g) {
         int half = wellW / 2;
         g.text(font, Component.literal("GENERAL"), wellX + 8, wellY + 4, PanelStyle.TEXT);
@@ -291,6 +348,7 @@ public class StatEditorScreen extends Screen {
         g.fill(wellX + half + 96, wellY + 106, wellX + half + 114, wellY + 124, 0xFF000000 | parseColor(hex));
     }
 
+    /** VALUE page: default/min/max, the decimal and clamp flags, and persistence. */
     private void renderValue(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("VALUE"), wellX + 8, wellY + 4, PanelStyle.TEXT);
         g.text(font, Component.literal("DEFAULT"), wellX + 8, wellY + 16, PanelStyle.TEXT_DIM);
@@ -309,6 +367,7 @@ public class StatEditorScreen extends Screen {
         renderToggle(g, mouseX, mouseY, "ON RESPAWN", respawnReset ? "Reset" : "Keep value", wellX + 168, wellY + 112);
     }
 
+    /** STAGES page: the timeline overview, or one stage's detail form when one is selected. */
     private void renderStages(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         if (selectedStage >= 0 && selectedStage < stages().size()) {
             renderStageDetail(g, mouseX, mouseY);
@@ -317,6 +376,11 @@ public class StatEditorScreen extends Screen {
         }
     }
 
+    /**
+     * Stage overview: a timeline spanning the stat's min..max with one band per stage,
+     * above a scrolling list. Positions are computed as fractions of the value range, so
+     * the timeline reflects the actual configured bounds.
+     */
     private void renderStageList(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("STAGES"), wellX + 8, wellY + 4, PanelStyle.TEXT);
         PanelStyle.button(g, font, "+ ADD STAGE", wellX + wellW - 100, wellY, 92,
@@ -383,6 +447,7 @@ public class StatEditorScreen extends Screen {
         }
     }
 
+    /** One stage's form: name/id/range fields plus its effects and enter/exit action lists. */
     private void renderStageDetail(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         var stage = stage(selectedStage);
         String stageId = JsonEdit.getString(stage, "id", "?").toUpperCase();
@@ -453,6 +518,7 @@ public class StatEditorScreen extends Screen {
                 PanelStyle.hit(mouseX, mouseY, wellX + 16 + eventBtnW, eventsRowY, eventBtnW, PanelStyle.CONTROL_H), false);
     }
 
+    /** RULES page: one row per rule, summarised as trigger + condition/action counts. */
     private void renderRules(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("RULES"), wellX + 8, wellY + 4, PanelStyle.TEXT);
         g.text(font, Component.literal("Automatic ways this stat changes."), wellX + 8, wellY + 16, PanelStyle.TEXT_DIM);
@@ -494,6 +560,7 @@ public class StatEditorScreen extends Screen {
                 rules.size(), visibleRows, ruleScroll);
     }
 
+    /** Human-readable one-liner for a rule's trigger ("every 200 ticks", "on player_death"). */
     private String summarizeTrigger(com.google.gson.JsonObject rule) {
         if (!rule.has("trigger")) return "(none)";
         var trigger = rule.getAsJsonObject("trigger");
@@ -508,6 +575,7 @@ public class StatEditorScreen extends Screen {
         return type;
     }
 
+    /** "3 conditions" / the empty word when the list is absent or empty. */
     private String summarizeList(com.google.gson.JsonObject rule, String key, String emptyWord) {
         if (!rule.has(key) || rule.getAsJsonArray(key).isEmpty()) return emptyWord;
         var array = rule.getAsJsonArray(key);
@@ -517,6 +585,11 @@ public class StatEditorScreen extends Screen {
         return array.size() == 1 ? label : label + " +" + (array.size() - 1) + " more";
     }
 
+    /**
+     * DISPLAY page: HUD type and visibility options, with a live preview drawn by the real
+     * {@code StatHudOverlay} - so what the author sees here is exactly what players get.
+     * The preview value is draggable to check how the bar looks across the range.
+     */
     private void renderDisplay(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("DISPLAY"), wellX + 8, wellY + 4, PanelStyle.TEXT);
         boolean visible = JsonEdit.getBool(entry.json, "hud.visible", false);
@@ -589,6 +662,7 @@ public class StatEditorScreen extends Screen {
         g.fill(knobX - 2, sliderY - 2, knobX + 3, sliderY + 10, PanelStyle.ACCENT);
     }
 
+    /** ADVANCED page: the validation report plus a read-only pretty-printed JSON view. */
     private void renderAdvanced(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         g.text(font, Component.literal("ADVANCED"), wellX + 8, wellY + 4, PanelStyle.TEXT);
 
@@ -632,18 +706,21 @@ public class StatEditorScreen extends Screen {
         }
     }
 
+    /** Labelled cycle button; the click handling lives in {@link #mouseClicked}. */
     private void renderToggle(GuiGraphicsExtractor g, int mouseX, int mouseY, String label, String value, int x, int y) {
         g.text(font, Component.literal(label), x, y, PanelStyle.TEXT_DIM);
         PanelStyle.button(g, font, value, x, y + 10, 140,
                 PanelStyle.hit(mouseX, mouseY, x, y + 10, 140, PanelStyle.CONTROL_H), false);
     }
 
+    /** Labelled checkbox; the click handling lives in {@link #mouseClicked}. */
     private void renderCheckbox(GuiGraphicsExtractor g, int mouseX, int mouseY, String label, boolean checked, int x, int y) {
         PanelStyle.inset(g, x, y, 14, 14);
         if (checked) g.fill(x + 3, y + 3, x + 11, y + 11, PanelStyle.ACCENT);
         g.text(font, Component.literal(label), x + 20, y + 3, PanelStyle.TEXT);
     }
 
+    /** "Discard unsaved changes?" dialog, shown when leaving a dirty entry. */
     private void renderConfirmClose(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         int w = 240, h = 100, dx = (width - w) / 2, dy = (height - h) / 2;
         g.fill(0, 0, width, height, PanelStyle.SCREEN_DIM);
@@ -661,6 +738,13 @@ public class StatEditorScreen extends Screen {
 
     // ------------------------------------------------------------ input
 
+    /**
+     * All hit-testing for the immediate-mode controls, dispatched per page.
+     *
+     * <p>Long by nature: the buttons, toggles, timeline handles and list rows are drawn
+     * directly rather than as widgets, so every clickable region has to be re-derived here
+     * from the same geometry the render methods use.</p>
+     */
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
         double mx = event.x(), my = event.y();
@@ -995,6 +1079,7 @@ public class StatEditorScreen extends Screen {
 
     // ------------------------------------------------------------ helpers
 
+    /** Maps a mouse x on the preview slider back to a value in the stat's range. */
     private void updatePreview(double mx, int sliderX, int sliderW) {
         double min = JsonEdit.getDouble(entry.json, "value.min", 0);
         double max = JsonEdit.getDouble(entry.json, "value.max", 100);
@@ -1002,11 +1087,13 @@ public class StatEditorScreen extends Screen {
         previewValue = min + frac * (max - min);
     }
 
+    /** Flips a boolean at a dotted path and marks the entry dirty. */
     private void toggleBool(String path, boolean fallback) {
         JsonEdit.set(entry.json, path, !JsonEdit.getBool(entry.json, path, fallback));
         entry.dirty = true;
     }
 
+    /** Advances a string at a dotted path to the next allowed value, wrapping around. */
     private void cycleString(String path, String[] values) {
         String current = JsonEdit.getString(entry.json, path, values[0]);
         int idx = 0;
@@ -1015,6 +1102,12 @@ public class StatEditorScreen extends Screen {
         entry.dirty = true;
     }
 
+    /**
+     * Validates and, if clean, sends the definition to the server.
+     * Errors abort the save and jump to the ADVANCED page, where the issue list is shown;
+     * warnings do not block. On success the pristine snapshot is refreshed so the entry
+     * stops counting as dirty.
+     */
     private void save() {
         issues = StatValidator.validate(entry.statId, entry.json);
         boolean hasErrors = issues.stream().anyMatch(i -> i.level() == StatValidator.Level.ERROR);
@@ -1027,6 +1120,7 @@ public class StatEditorScreen extends Screen {
         entry.pristine = entry.json.deepCopy();
     }
 
+    /** Parses "#RRGGBB"; falls back to white on anything malformed. */
     private static int parseColor(String hex) {
         try {
             return Integer.parseInt(hex.replace("#", ""), 16);
@@ -1035,8 +1129,10 @@ public class StatEditorScreen extends Screen {
         }
     }
 
+    /** Called by child screens (rule, effect, typed-object editors) after they change the JSON. */
     void markDirtyFromChild() { entry.dirty = true; }
 
+    /** Editing must not pause a singleplayer world. */
     @Override
     public boolean isPauseScreen() { return false; }
 }
